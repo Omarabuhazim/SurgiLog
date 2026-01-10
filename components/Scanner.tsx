@@ -9,7 +9,7 @@ interface ScannerProps {
   sound: boolean;
 }
 
-// Check for Native Barcode Detection API (supported on Chrome for Android)
+// Check for Native Barcode Detection API
 const HAS_NATIVE_SCANNER = 'BarcodeDetector' in window;
 
 const Scanner = ({ onScan, onClose, haptics, sound }: ScannerProps) => {
@@ -21,17 +21,22 @@ const Scanner = ({ onScan, onClose, haptics, sound }: ScannerProps) => {
   const [hasTorch, setHasTorch] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
   const [isAutoScanDisabled, setIsAutoScanDisabled] = useState(false);
-  const [scanInterval, setScanInterval] = useState(HAS_NATIVE_SCANNER ? 150 : 3500); 
+  // Reduced interval for non-native from 3500ms to 2500ms for better responsiveness
+  const [scanInterval, setScanInterval] = useState(HAS_NATIVE_SCANNER ? 150 : 2500); 
   const isMountedRef = useRef(true);
   const nativeDetectorRef = useRef<any>(null);
 
-  // Initialize Native Detector if available
   useEffect(() => {
     if (HAS_NATIVE_SCANNER) {
       try {
-        // @ts-ignore - BarcodeDetector is a newer Web API
+        // Expanded format support for more hospital wristband types
+        // @ts-ignore
         nativeDetectorRef.current = new window.BarcodeDetector({
-          formats: ['code_128', 'code_39'] 
+          formats: [
+            'code_128', 'code_39', 'code_93', 
+            'codabar', 'ean_13', 'ean_8', 
+            'upc_a', 'upc_e', 'data_matrix', 'itf'
+          ] 
         });
       } catch (e) {
         console.warn("BarcodeDetector initialization failed, falling back to Gemini.");
@@ -60,9 +65,7 @@ const Scanner = ({ onScan, onClose, haptics, sound }: ScannerProps) => {
         const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
         if (AudioContextClass) {
           const audioCtx = new AudioContextClass();
-          if (audioCtx.state === 'suspended') {
-            audioCtx.resume();
-          }
+          if (audioCtx.state === 'suspended') audioCtx.resume();
           const oscillator = audioCtx.createOscillator();
           const gainNode = audioCtx.createGain();
           oscillator.type = 'sine';
@@ -100,15 +103,15 @@ const Scanner = ({ onScan, onClose, haptics, sound }: ScannerProps) => {
       const stream = await navigator.mediaDevices.getUserMedia({ 
         video: { 
           facingMode: 'environment',
-          width: { ideal: 1920 },
+          width: { ideal: 1920 }, // High res for barcode clarity
           height: { ideal: 1080 },
           // @ts-ignore
-          advanced: [{ focusMode: 'continuous' }]
+          advanced: [{ focusMode: 'continuous' }, { whiteBalanceMode: 'continuous' }]
         } 
       });
       if (videoRef.current && isMountedRef.current) {
         videoRef.current.srcObject = stream;
-        setStatusMessage(HAS_NATIVE_SCANNER ? "Align Barcode" : "Align ID or Barcode");
+        setStatusMessage(HAS_NATIVE_SCANNER ? "Align Barcode" : "Position Patient ID clearly");
         const track = stream.getVideoTracks()[0];
         const capabilities = (track.getCapabilities?.() || {}) as any;
         if (capabilities.torch) setHasTorch(true);
@@ -124,7 +127,7 @@ const Scanner = ({ onScan, onClose, haptics, sound }: ScannerProps) => {
     const video = videoRef.current;
     if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
 
-    // PATH 1: LOCAL NATIVE SCANNING (Zero API usage)
+    // PATH 1: LOCAL NATIVE SCANNING (Instant)
     if (nativeDetectorRef.current && !manual) {
       try {
         const barcodes = await nativeDetectorRef.current.detect(video);
@@ -141,7 +144,7 @@ const Scanner = ({ onScan, onClose, haptics, sound }: ScannerProps) => {
       }
     }
 
-    // PATH 2: GEMINI AI FALLBACK
+    // PATH 2: GEMINI AI FALLBACK (Slower)
     if (manual || (!nativeDetectorRef.current && !isCapturing && !isAutoScanDisabled)) {
       setIsCapturing(true);
       setStatusMessage("AI Analyzing...");
@@ -154,7 +157,7 @@ const Scanner = ({ onScan, onClose, haptics, sound }: ScannerProps) => {
         canvas.height = video.videoHeight;
         context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
         
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85); // High quality for thin barcodes
         const base64 = dataUrl.split(',')[1];
         
         try {
@@ -165,7 +168,7 @@ const Scanner = ({ onScan, onClose, haptics, sound }: ScannerProps) => {
             stopCamera();
             setTimeout(() => onScan(id), 600);
           } else {
-            setStatusMessage("No match found. Try again.");
+            setStatusMessage("No ID found. Try closer.");
             setIsCapturing(false);
           }
         } catch (err: any) {
@@ -173,9 +176,9 @@ const Scanner = ({ onScan, onClose, haptics, sound }: ScannerProps) => {
             setIsCapturing(false);
             if (err?.message?.includes('429')) {
               setStatusMessage("Quota Reached. Auto-scan disabled.");
-              setIsAutoScanDisabled(true); // Stop auto-polling Gemini
+              setIsAutoScanDisabled(true);
             } else {
-              setStatusMessage("Scanning paused. Use manual button.");
+              setStatusMessage("Scan failed. Tap button manually.");
             }
           }
         }
@@ -203,7 +206,7 @@ const Scanner = ({ onScan, onClose, haptics, sound }: ScannerProps) => {
   return (
     <div className="fixed inset-0 z-[60] bg-black flex flex-col">
       <div className="relative flex-1 overflow-hidden">
-        <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+        <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover opacity-80" />
         <canvas ref={canvasRef} className="hidden" />
         
         <div className="absolute top-6 left-6 z-10">
@@ -221,31 +224,39 @@ const Scanner = ({ onScan, onClose, haptics, sound }: ScannerProps) => {
         )}
 
         <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-10">
-          <div className={`w-full max-w-sm ${HAS_NATIVE_SCANNER ? 'aspect-[3/1]' : 'aspect-square'} relative transition-all duration-500`}>
-            <div className="absolute -top-1 -left-1 w-8 h-8 border-t-4 border-l-4 border-blue-500 rounded-tl-xl"></div>
-            <div className="absolute -top-1 -right-1 w-8 h-8 border-t-4 border-r-4 border-blue-500 rounded-tr-xl"></div>
-            <div className="absolute -bottom-1 -left-1 w-8 h-8 border-b-4 border-l-4 border-blue-500 rounded-bl-xl"></div>
-            <div className="absolute -bottom-1 -right-1 w-8 h-8 border-b-4 border-r-4 border-blue-500 rounded-br-xl"></div>
-            <div className="absolute left-2 right-2 h-0.5 bg-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.8)] top-1/2 -translate-y-1/2 animate-[pulse_2s_infinite]"></div>
+          <div className={`w-full max-w-sm aspect-square relative transition-all duration-500 ${isCapturing ? 'scale-90' : 'scale-100'}`}>
+            <div className={`absolute -top-1 -left-1 w-12 h-12 border-t-4 border-l-4 rounded-tl-2xl transition-colors duration-500 ${isCapturing ? 'border-yellow-400' : 'border-blue-500'}`}></div>
+            <div className={`absolute -top-1 -right-1 w-12 h-12 border-t-4 border-r-4 rounded-tr-2xl transition-colors duration-500 ${isCapturing ? 'border-yellow-400' : 'border-blue-500'}`}></div>
+            <div className={`absolute -bottom-1 -left-1 w-12 h-12 border-b-4 border-l-4 rounded-bl-2xl transition-colors duration-500 ${isCapturing ? 'border-yellow-400' : 'border-blue-500'}`}></div>
+            <div className={`absolute -bottom-1 -right-1 w-12 h-12 border-b-4 border-r-4 rounded-br-2xl transition-colors duration-500 ${isCapturing ? 'border-yellow-400' : 'border-blue-500'}`}></div>
+            
+            <div className={`absolute left-4 right-4 h-1 transition-all duration-500 ${isCapturing ? 'bg-yellow-400 shadow-[0_0_20px_rgba(250,204,21,0.8)]' : 'bg-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.8)]'} top-1/2 -translate-y-1/2 animate-[pulse_1.5s_infinite]`}></div>
           </div>
         </div>
 
         <div className="absolute bottom-12 left-0 right-0 px-10 text-center">
           <div className="mb-8">
-            <p className="text-white font-bold text-lg drop-shadow-lg">{error || statusMessage}</p>
-            {isAutoScanDisabled && !error && (
-              <p className="text-blue-300 text-xs font-bold uppercase tracking-widest mt-2 bg-blue-900/40 py-1 px-3 rounded-full inline-block">
-                Manual Mode Active
-              </p>
+            <p className="text-white font-black text-xl drop-shadow-[0_2px_4px_rgba(0,0,0,1)] uppercase tracking-tight">{error || statusMessage}</p>
+            {!HAS_NATIVE_SCANNER && !isCapturing && !error && (
+               <p className="text-blue-300 text-[10px] font-bold uppercase tracking-[0.2em] mt-2 bg-blue-900/40 py-1.5 px-4 rounded-full inline-block backdrop-blur-sm">
+                 AI Enhanced Scanning Active
+               </p>
             )}
           </div>
           
           <button 
             onClick={() => captureAndScan(true)} 
             disabled={isCapturing} 
-            className="w-full py-5 bg-white text-black rounded-[2rem] font-black text-lg active:scale-95 transition-all shadow-2xl disabled:bg-white/50"
+            className="w-full h-16 bg-white text-black rounded-[2rem] font-black text-lg active:scale-95 transition-all shadow-2xl disabled:bg-white/40 disabled:text-black/40 flex items-center justify-center gap-3"
           >
-            {isCapturing ? 'ANALYZING...' : 'CAPTURE PATIENT ID'}
+            {isCapturing ? (
+              <>
+                <div className="w-5 h-5 border-3 border-black/20 border-t-black rounded-full animate-spin"></div>
+                ANALYZING...
+              </>
+            ) : (
+              'CAPTURE PATIENT ID'
+            )}
           </button>
         </div>
       </div>

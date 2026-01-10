@@ -31,8 +31,7 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 2, delay = 2000): Pr
     const isRateLimit = errorMsg.includes('429') || error?.status === 429 || errorMsg.includes('RESOURCE_EXHAUSTED');
     
     if (isRateLimit) {
-      // If we hit a rate limit, set a global cooldown
-      setCooldown(45); // 45 second global block for aggressive throttling
+      setCooldown(45);
       throw new Error("429: API Quota exhausted. Switching to manual mode.");
     }
 
@@ -53,16 +52,17 @@ export const scanPatientId = async (base64Image: string): Promise<string | null>
         contents: {
           parts: [
             { 
-              text: `Act as a specialized medical scanner. Your task is to decode linear barcodes (Code 128, Code 39) or extract the Patient MRN from the image.
+              text: `Act as a precision medical scanner. Your primary goal is to extract a Patient MRN or decode a Linear Barcode from a hospital wristband.
               
-              PRIORITY:
-              1. Decode any linear barcode into its alphanumeric string representation.
-              2. Find high-contrast Patient ID strings (usually 6-12 digits).
+              INSTRUCTIONS:
+              1. LINEAR BARCODES: Carefully look for thin vertical black lines. Decode the alphanumeric value they represent (Code 128/39).
+              2. TEXT OCR: Look for labels like "MRN", "ID", "Patient ID", or "URN". 
+              3. FORMAT: IDs are typically 6-12 digits or alphanumeric (e.g., 1234567, ABC123456).
               
-              OUTPUT RULES:
-              - Return ONLY the decoded value.
-              - No labels, no prefixes (no 'MRN:', no 'ID:').
-              - If none found, return 'null'.` 
+              STRICT OUTPUT:
+              - Return ONLY the raw alphanumeric ID.
+              - No prefix, no labels, no punctuation.
+              - If not absolutely certain, return 'null'.` 
             },
             { inlineData: { mimeType: 'image/jpeg', data: base64Image } }
           ]
@@ -76,12 +76,13 @@ export const scanPatientId = async (base64Image: string): Promise<string | null>
       const result = response.text?.trim() || 'null';
       if (result.toLowerCase() === 'null' || result.length < 2) return null;
       
+      // Secondary cleaning of common AI hallucinated prefixes
       return result.split('\n')[0].replace(/^(MRN|ID|PID|PT|ID:):?\s*/i, '').trim();
     } catch (error: any) {
       if (error.message?.includes('429') || error.message?.includes('RESOURCE_EXHAUSTED')) {
         throw error;
       }
-      console.error("Scanning error details:", error);
+      console.error("Scanning error:", error);
       return null;
     }
   });
@@ -89,11 +90,7 @@ export const scanPatientId = async (base64Image: string): Promise<string | null>
 
 export const suggestProcedures = async (query: string): Promise<string[]> => {
   if (!query || query.length < 3) return [];
-  
-  // Silent check for suggestions to avoid throwing errors during background typing
-  if (getCooldownRemaining() > 0) {
-    return [];
-  }
+  if (getCooldownRemaining() > 0) return [];
   
   try {
     return await withRetry(async () => {
@@ -106,13 +103,12 @@ export const suggestProcedures = async (query: string): Promise<string[]> => {
           No numbers, no bullets, one per line.` }]
         },
         config: {
-          temperature: 0.1, // More precise
+          temperature: 0.1,
         }
       });
       return response.text?.split('\n').filter(p => p.trim() && p.length > 3).map(p => p.replace(/^\d+\.\s*/, '').trim()) || [];
-    }, 0, 0); // No retries for autocomplete suggestions to save quota
+    }, 0, 0);
   } catch (error) {
-    // Silently consume suggestion errors (mostly 429s) to keep UX clean
     return [];
   }
 };
