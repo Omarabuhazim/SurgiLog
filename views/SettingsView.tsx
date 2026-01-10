@@ -1,4 +1,3 @@
-
 import React, { useRef } from 'react';
 import { UserSettings, Theme } from '../types';
 import { SPECIALTIES } from '../constants';
@@ -11,6 +10,17 @@ interface SettingsViewProps {
   onLogout: () => void;
 }
 
+// iOS-style List Item - Moved outside to prevent re-mounting
+const ListItem = ({ label, children, icon, last = false }: { label: string, children?: React.ReactNode, icon?: React.ReactNode, last?: boolean }) => (
+  <div className={`p-4 flex items-center justify-between ${!last ? 'border-b border-slate-100 dark:border-slate-800' : ''}`}>
+    <div className="flex items-center gap-3">
+       {icon && <div className="text-slate-500 dark:text-slate-400">{icon}</div>}
+       <span className="text-base font-medium text-slate-900 dark:text-slate-100">{label}</span>
+    </div>
+    <div className="flex items-center">{children}</div>
+  </div>
+);
+
 const SettingsView = ({ 
   settings, 
   onUpdateSettings, 
@@ -19,17 +29,6 @@ const SettingsView = ({
 }: SettingsViewProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const currentUser = auth.currentUser;
-
-  // iOS-style List Item
-  const ListItem = ({ label, children, icon, last = false }: { label: string, children: React.ReactNode, icon?: React.ReactNode, last?: boolean }) => (
-    <div className={`p-4 flex items-center justify-between ${!last ? 'border-b border-slate-100 dark:border-slate-800' : ''}`}>
-      <div className="flex items-center gap-3">
-         {icon && <div className="text-slate-500 dark:text-slate-400">{icon}</div>}
-         <span className="text-base font-medium text-slate-900 dark:text-slate-100">{label}</span>
-      </div>
-      <div className="flex items-center">{children}</div>
-    </div>
-  );
 
   return (
     <div className="space-y-6 pb-32 animate-in fade-in duration-300">

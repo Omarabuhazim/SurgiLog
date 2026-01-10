@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { ProcedureLog } from '../types';
 import { PATIENT_AGES, ROLES, GENDERS } from '../constants';
@@ -13,6 +12,16 @@ interface FormViewProps {
   haptics: boolean;
   sound: boolean;
 }
+
+// iOS-style Input Group Wrapper - Moved outside to prevent re-mounting
+const InputGroup = ({ children, title }: { children?: React.ReactNode, title: string }) => (
+  <div className="mb-6">
+    <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide ml-4 mb-2">{title}</h3>
+    <div className="bg-white dark:bg-slate-900 rounded-[18px] overflow-hidden shadow-sm border border-slate-100 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800">
+      {children}
+    </div>
+  </div>
+);
 
 const FormView = ({ initialLog, onSave, onDelete, onCancel, haptics, sound }: FormViewProps) => {
   const [scannedId, setScannedId] = useState(initialLog?.patientId || '');
@@ -61,16 +70,6 @@ const FormView = ({ initialLog, onSave, onDelete, onCancel, haptics, sound }: Fo
       setTimeout(() => setConfirmDelete(false), 4000);
     }
   };
-
-  // iOS-style Input Group Wrapper
-  const InputGroup = ({ children, title }: { children: React.ReactNode, title: string }) => (
-    <div className="mb-6">
-      <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide ml-4 mb-2">{title}</h3>
-      <div className="bg-white dark:bg-slate-900 rounded-[18px] overflow-hidden shadow-sm border border-slate-100 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800">
-        {children}
-      </div>
-    </div>
-  );
 
   return (
     <div className="space-y-6 pb-24 animate-in slide-in-from-bottom-4 duration-300">
