@@ -25,6 +25,7 @@ export interface UserSettings {
   theme: Theme;
   logoUrl?: string;
   cloudSyncEnabled: boolean;
+  isPro?: boolean; // New field for subscription status
 }
 
 export interface AuthState {

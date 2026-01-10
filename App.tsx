@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { ProcedureLog, UserSettings } from './types';
 import { SPECIALTIES } from './constants';
 import { CloudService } from './services/cloudService';
+import { SubscriptionService } from './services/subscriptionService';
 import { auth } from './services/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { Unsubscribe } from 'firebase/firestore';
@@ -14,6 +15,7 @@ import FormView from './views/FormView';
 import SettingsView from './views/SettingsView';
 import ExportView from './views/ExportView';
 import AuthView from './views/AuthView';
+import PaywallView from './views/PaywallView';
 
 // UI Components
 import BottomNav from './components/BottomNav';
@@ -53,6 +55,7 @@ const App = () => {
   // Navigation State
   const [view, setView] = useState<'onboarding' | 'auth' | 'dashboard' | 'form' | 'settings' | 'export' | 'profile_setup'>('onboarding');
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [showPaywall, setShowPaywall] = useState(false);
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
   
   // Data State
@@ -71,7 +74,8 @@ const App = () => {
     soundEnabled: true,
     theme: 'system',
     logoUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Surgeon',
-    cloudSyncEnabled: true // Always true in live mode
+    cloudSyncEnabled: true,
+    isPro: false
   });
 
   // --- Theme Logic ---
@@ -82,7 +86,6 @@ const App = () => {
       
       if (isDark) {
         root.classList.add('dark');
-        // Update meta theme-color for iOS status bar
         document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#0f172a');
       } else {
         root.classList.remove('dark');
@@ -92,7 +95,6 @@ const App = () => {
 
     applyTheme();
     
-    // Listen for system changes if in system mode
     if (settings.theme === 'system') {
       const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
       const handler = () => applyTheme();
@@ -127,8 +129,6 @@ const App = () => {
         unsubscribeSettings = CloudService.subscribeSettings(user.uid, (data) => {
           if (data) {
             setSettings(prev => ({ ...prev, ...data }));
-            
-            // If we are currently in onboarding/auth and have a profile, go to dashboard
             if ((view === 'onboarding' || view === 'profile_setup')) {
                if(data.name) {
                  setView('dashboard');
@@ -137,7 +137,6 @@ const App = () => {
                }
             }
           } else {
-            // New user with no settings yet
             if (user.displayName) {
               setSettings(prev => ({ ...prev, name: user.displayName! }));
             }
@@ -151,7 +150,6 @@ const App = () => {
         });
 
       } else {
-        // Logged out
         setCurrentUser(null);
         setLogs([]);
         setSettings({
@@ -161,7 +159,8 @@ const App = () => {
             soundEnabled: true,
             theme: 'system',
             logoUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Surgeon',
-            cloudSyncEnabled: true
+            cloudSyncEnabled: true,
+            isPro: false
         });
         
         unsubscribeLogs?.();
@@ -243,7 +242,7 @@ const App = () => {
   };
 
   const handleUpdateSettings = async (newSettings: UserSettings) => {
-    setSettings(newSettings); // Optimistic update
+    setSettings(newSettings); 
     if (currentUser) {
        await CloudService.saveSettings(currentUser.uid, newSettings);
     }
@@ -254,11 +253,40 @@ const App = () => {
        addToast('error', 'Please enter your name');
        return;
      }
-     
      if (currentUser) {
        await CloudService.saveSettings(currentUser.uid, { ...settings });
        setView('dashboard');
      }
+  };
+
+  // --- Subsciption Handlers ---
+  const handleProPurchaseSuccess = () => {
+    setShowPaywall(false);
+    addToast('success', 'Welcome to Pro! You now have unlimited logs.');
+    // Optimistic update
+    setSettings(prev => ({ ...prev, isPro: true }));
+  };
+
+  const checkEntitlement = (action: 'log' | 'export') => {
+    const isPro = settings.isPro || false;
+    
+    if (action === 'log') {
+       if (editingLog) return true; // Always allow edits
+       if (SubscriptionService.canAddLog(logs.length, isPro)) return true;
+       setShowPaywall(true);
+       return false;
+    }
+    return true;
+  };
+
+  const handleNavChange = (newView: any) => {
+    if (newView === 'form') {
+      if (checkEntitlement('log')) {
+        setView(newView);
+      }
+    } else {
+      setView(newView);
+    }
   };
 
   // --- Views ---
@@ -381,19 +409,21 @@ const App = () => {
     );
   }
 
-  // Header Actions - Profile Settings Button (Professional Circle Version)
+  // Header Actions
   const DashboardHeaderAction = (
     <button 
       onClick={() => setView('settings')} 
-      className="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all rounded-full border border-slate-200 dark:border-slate-700 shadow-sm active:scale-95"
+      className={`p-1.5 transition-all rounded-full border shadow-sm active:scale-95 ${settings.isPro ? 'bg-slate-100 dark:bg-slate-800 border-yellow-400/50' : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700'}`}
     >
-      <div className="w-8 h-8 rounded-full bg-white dark:bg-slate-900 overflow-hidden border border-slate-300 dark:border-slate-600 shadow-inner">
+      <div className={`w-8 h-8 rounded-full overflow-hidden border ${settings.isPro ? 'border-yellow-400' : 'border-slate-300 dark:border-slate-600'} shadow-inner relative`}>
         <img src={settings.logoUrl} className="w-full h-full object-cover" alt="Profile" />
+        {settings.isPro && (
+           <div className="absolute bottom-0 right-0 w-3 h-3 bg-yellow-400 rounded-full border border-white"></div>
+        )}
       </div>
     </button>
   );
 
-  // Main App Layout
   return (
     <>
       <Layout 
@@ -415,9 +445,17 @@ const App = () => {
           defaultName={settings.name} 
         />
       )}
+      
+      {showPaywall && currentUser && (
+        <PaywallView 
+          userId={currentUser.uid} 
+          onClose={() => setShowPaywall(false)} 
+          onSuccess={handleProPurchaseSuccess} 
+        />
+      )}
 
       <ToastContainer toasts={toasts} onDismiss={removeToast} />
-      <BottomNav currentView={view as any} onChange={(v) => setView(v)} />
+      <BottomNav currentView={view as any} onChange={handleNavChange} />
     </>
   );
 };
