@@ -101,12 +101,15 @@ export const suggestProcedures = async (query: string): Promise<string[]> => {
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: {
-          parts: [{ text: `Provide a list of 5 medical surgical procedures that start with or are related to: "${query}". 
-          Include the modality where appropriate (e.g., "Laparoscopic Appendectomy", "Open Colectomy", "Robotic Prostatectomy"). 
-          Return only the procedure names, one per line.` }]
+          parts: [{ text: `List exactly 5 professional surgical procedures starting with or containing: "${query}". 
+          Format: "Standard medical name" (e.g., "Laparoscopic Cholecystectomy"). 
+          No numbers, no bullets, one per line.` }]
         },
+        config: {
+          temperature: 0.1, // More precise
+        }
       });
-      return response.text?.split('\n').filter(p => p.trim()) || [];
+      return response.text?.split('\n').filter(p => p.trim() && p.length > 3).map(p => p.replace(/^\d+\.\s*/, '').trim()) || [];
     }, 0, 0); // No retries for autocomplete suggestions to save quota
   } catch (error) {
     // Silently consume suggestion errors (mostly 429s) to keep UX clean

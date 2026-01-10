@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+
+import React, { useState, useEffect, useMemo } from 'react';
 import { ProcedureLog } from '../types';
 import { PATIENT_AGES, ROLES, GENDERS } from '../constants';
 import { suggestProcedures } from '../services/geminiService';
@@ -6,6 +7,7 @@ import Scanner from '../components/Scanner';
 
 interface FormViewProps {
   initialLog: ProcedureLog | null;
+  logs: ProcedureLog[]; // Added to access history for frequency analysis
   onSave: (logData: Omit<ProcedureLog, 'id' | 'createdAt' | 'syncStatus'>) => void;
   onDelete?: (id: string) => void;
   onCancel: () => void;
@@ -13,7 +15,6 @@ interface FormViewProps {
   sound: boolean;
 }
 
-// iOS-style Input Group Wrapper - Moved outside to prevent re-mounting
 const InputGroup = ({ children, title }: { children?: React.ReactNode, title: string }) => (
   <div className="mb-6">
     <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide ml-4 mb-2">{title}</h3>
@@ -23,7 +24,7 @@ const InputGroup = ({ children, title }: { children?: React.ReactNode, title: st
   </div>
 );
 
-const FormView = ({ initialLog, onSave, onDelete, onCancel, haptics, sound }: FormViewProps) => {
+const FormView = ({ initialLog, logs, onSave, onDelete, onCancel, haptics, sound }: FormViewProps) => {
   const [scannedId, setScannedId] = useState(initialLog?.patientId || '');
   const [procedureQuery, setProcedureQuery] = useState(initialLog?.procedureName || '');
   const [selectedRole, setSelectedRole] = useState(initialLog?.role || ROLES[0]);
@@ -36,6 +37,27 @@ const FormView = ({ initialLog, onSave, onDelete, onCancel, haptics, sound }: Fo
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
+  // --- Frequent Procedures Logic (Personal Memory) ---
+  const frequentProcedures = useMemo(() => {
+    const counts: Record<string, number> = {};
+    logs.forEach(log => {
+      counts[log.procedureName] = (counts[log.procedureName] || 0) + 1;
+    });
+    // Sort by frequency and take top 10
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name]) => name)
+      .slice(0, 10);
+  }, [logs]);
+
+  // Filter frequent procedures based on current typing
+  const localMatches = useMemo(() => {
+    if (!procedureQuery.trim()) return frequentProcedures.slice(0, 5);
+    return frequentProcedures.filter(p => 
+      p.toLowerCase().includes(procedureQuery.toLowerCase())
+    );
+  }, [procedureQuery, frequentProcedures]);
+
   useEffect(() => {
     if (procedureQuery.length < 3) {
       setAiSuggestions([]);
@@ -43,10 +65,12 @@ const FormView = ({ initialLog, onSave, onDelete, onCancel, haptics, sound }: Fo
     }
     const timer = setTimeout(async () => {
       const suggestions = await suggestProcedures(procedureQuery);
-      setAiSuggestions(suggestions);
-    }, 800);
+      // Filter out AI suggestions that are already in local matches to avoid duplicates
+      const filteredAi = suggestions.filter(s => !localMatches.includes(s));
+      setAiSuggestions(filteredAi);
+    }, 600); // Faster debounce
     return () => clearTimeout(timer);
-  }, [procedureQuery]);
+  }, [procedureQuery, localMatches]);
 
   const handleSubmit = () => {
     if (!procedureQuery.trim()) return;
@@ -71,12 +95,16 @@ const FormView = ({ initialLog, onSave, onDelete, onCancel, haptics, sound }: Fo
     }
   };
 
+  const handleSuggestionClick = (suggestion: string) => {
+    setProcedureQuery(suggestion);
+    setShowSuggestions(false);
+    if (haptics && 'vibrate' in navigator) navigator.vibrate(10);
+  };
+
   return (
     <div className="space-y-6 pb-24 animate-in slide-in-from-bottom-4 duration-300">
       
-      {/* Patient Data Group */}
       <InputGroup title="Patient Information">
-        {/* MRN Field with Embedded Button */}
         <div className="p-1 relative">
           <input 
             type="text" 
@@ -110,9 +138,8 @@ const FormView = ({ initialLog, onSave, onDelete, onCancel, haptics, sound }: Fo
         </div>
       </InputGroup>
 
-      {/* Procedure Data Group */}
       <InputGroup title="Surgical Details">
-        <div className="p-1 relative z-20">
+        <div className="p-1 relative z-50">
             <input 
               type="text" 
               value={procedureQuery}
@@ -120,16 +147,40 @@ const FormView = ({ initialLog, onSave, onDelete, onCancel, haptics, sound }: Fo
               onFocus={() => setShowSuggestions(true)}
               className="w-full h-12 px-4 bg-transparent outline-none font-bold text-lg text-slate-900 dark:text-white placeholder:text-slate-300 dark:placeholder:text-slate-600"
               placeholder="Procedure Name"
+              autoComplete="off"
             />
-            {showSuggestions && aiSuggestions.length > 0 && (
-              <div className="absolute top-full left-0 right-0 bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl mt-2 shadow-2xl overflow-hidden z-[30] max-h-60 overflow-y-auto">
+            {showSuggestions && (localMatches.length > 0 || aiSuggestions.length > 0) && (
+              <div className="absolute top-full left-0 right-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl mt-2 shadow-2xl overflow-hidden z-[100] max-h-72 overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
+                {/* Local Frequent Matches */}
+                {localMatches.length > 0 && (
+                  <div className="bg-slate-50 dark:bg-slate-800/50 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-400 border-b border-slate-100 dark:border-slate-800">
+                    Frequent / Recent
+                  </div>
+                )}
+                {localMatches.map((s, i) => (
+                  <button 
+                    key={`local-${i}`} 
+                    onMouseDown={(e) => { e.preventDefault(); handleSuggestionClick(s); }}
+                    className="w-full text-left px-5 py-4 hover:bg-blue-50 dark:hover:bg-blue-900/20 border-b last:border-0 border-slate-50 dark:border-slate-800 transition-colors flex items-center justify-between group"
+                  >
+                    <span className="font-bold text-slate-800 dark:text-slate-100 text-sm">{s}</span>
+                    <svg className="text-slate-300 group-hover:text-blue-500" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M12 5v14M5 12h14"/></svg>
+                  </button>
+                ))}
+
+                {/* AI Suggestions */}
+                {aiSuggestions.length > 0 && (
+                  <div className="bg-slate-50 dark:bg-slate-800/50 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-blue-500 border-y border-slate-100 dark:border-slate-800 flex items-center gap-2">
+                    <span className="animate-pulse">✨</span> AI Suggested
+                  </div>
+                )}
                 {aiSuggestions.map((s, i) => (
                   <button 
-                    key={i} 
-                    onMouseDown={() => { setProcedureQuery(s); setShowSuggestions(false); }}
-                    className="w-full text-left p-4 hover:bg-slate-50 dark:hover:bg-slate-700 border-b last:border-0 border-slate-50 dark:border-slate-700 font-medium text-slate-700 dark:text-slate-200 text-sm"
+                    key={`ai-${i}`} 
+                    onMouseDown={(e) => { e.preventDefault(); handleSuggestionClick(s); }}
+                    className="w-full text-left px-5 py-4 hover:bg-blue-50 dark:hover:bg-blue-900/20 border-b last:border-0 border-slate-50 dark:border-slate-800 transition-colors"
                   >
-                    {s}
+                    <span className="font-medium text-slate-600 dark:text-slate-300 text-sm">{s}</span>
                   </button>
                 ))}
               </div>
