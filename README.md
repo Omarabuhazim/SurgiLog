@@ -1,20 +1,20 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# SurgiLog - Professional Surgical Logbook
 
-# Run and deploy your AI Studio app
+Professional Surgical Logbook for case management and reporting, featuring AI-powered procedure suggestions and MRN scanning.
 
-This contains everything you need to run your app locally.
+## 🐧 One-Line Linux Setup
 
-View your app in AI Studio: https://ai.studio/apps/drive/1eoP9S_-Fqy6BgyF0Gn8JaJWn0NGUJAfD
+Run this single command in your terminal (replace `<KEY>` with your actual Gemini API key):
 
-## Run Locally
+```bash
+npm run setup -- <KEY>
+```
 
-**Prerequisites:**  Node.js
+## 🚀 How to Start
+After running the setup above, start the app with:
+```bash
+npm run dev
+```
 
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## 🛡️ GitHub Security
+Your API key is stored in `.env.local`. The setup script automatically ensures this file is never uploaded to GitHub via the `.gitignore` file.
