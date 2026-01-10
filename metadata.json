@@ -1,0 +1,7 @@
+{
+  "name": "SurgiLog",
+  "description": "Professional Surgical Logbook for case management and reporting.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
