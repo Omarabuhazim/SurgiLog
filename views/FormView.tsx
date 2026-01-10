@@ -73,11 +73,15 @@ const FormView = ({ initialLog, logs, onSave, onDelete, onCancel, haptics, sound
   }, [procedureQuery, localMatches]);
 
   const handleSubmit = () => {
-    if (!procedureQuery.trim()) return;
-    const finalPatientId = scannedId.trim() || `PID-${Math.floor(Math.random() * 90000) + 10000}`;
+    const trimmedId = scannedId.trim();
+    const trimmedProcedure = procedureQuery.trim();
+    
+    // Safety check: ensure both required fields are present
+    if (!trimmedId || !trimmedProcedure) return;
+
     onSave({
-      patientId: finalPatientId,
-      procedureName: procedureQuery,
+      patientId: trimmedId,
+      procedureName: trimmedProcedure,
       date: selectedDate,
       patientAge: selectedAge,
       patientGender: selectedGender as any,
@@ -101,6 +105,9 @@ const FormView = ({ initialLog, logs, onSave, onDelete, onCancel, haptics, sound
     if (haptics && 'vibrate' in navigator) navigator.vibrate(10);
   };
 
+  // Form is valid only if Procedure and Patient ID are provided
+  const isFormValid = procedureQuery.trim().length > 0 && scannedId.trim().length > 0;
+
   return (
     <div className="space-y-6 pb-24 animate-in slide-in-from-bottom-4 duration-300">
       
@@ -110,8 +117,8 @@ const FormView = ({ initialLog, logs, onSave, onDelete, onCancel, haptics, sound
             type="text" 
             value={scannedId}
             onChange={e => setScannedId(e.target.value)}
-            className="w-full h-12 pl-4 pr-24 bg-transparent outline-none font-mono font-bold text-lg text-slate-900 dark:text-white placeholder:text-slate-300 dark:placeholder:text-slate-600"
-            placeholder="MRN / ID"
+            className={`w-full h-12 pl-4 pr-24 bg-transparent outline-none font-mono font-bold text-lg text-slate-900 dark:text-white placeholder:text-slate-300 dark:placeholder:text-slate-600 transition-colors`}
+            placeholder="Patient MRN / ID (Required)"
           />
           <button 
             onClick={() => setIsScannerOpen(true)}
@@ -146,7 +153,7 @@ const FormView = ({ initialLog, logs, onSave, onDelete, onCancel, haptics, sound
               onChange={e => { setProcedureQuery(e.target.value); setShowSuggestions(true); }}
               onFocus={() => setShowSuggestions(true)}
               className="w-full h-12 px-4 bg-transparent outline-none font-bold text-lg text-slate-900 dark:text-white placeholder:text-slate-300 dark:placeholder:text-slate-600"
-              placeholder="Procedure Name"
+              placeholder="Procedure Name (Required)"
               autoComplete="off"
             />
             {showSuggestions && (localMatches.length > 0 || aiSuggestions.length > 0) && (
@@ -209,8 +216,8 @@ const FormView = ({ initialLog, logs, onSave, onDelete, onCancel, haptics, sound
       <div className="px-1 space-y-4 pt-2">
         <button 
           onClick={handleSubmit}
-          disabled={!procedureQuery.trim()}
-          className="w-full h-14 bg-blue-600 text-white rounded-[18px] font-bold text-lg shadow-lg shadow-blue-600/30 active:scale-[0.98] transition-all disabled:opacity-50 disabled:shadow-none"
+          disabled={!isFormValid}
+          className="w-full h-14 bg-blue-600 text-white rounded-[18px] font-bold text-lg shadow-lg shadow-blue-600/30 active:scale-[0.98] transition-all disabled:opacity-30 disabled:grayscale disabled:shadow-none"
         >
           {initialLog ? 'Update Record' : 'Save Record'}
         </button>
