@@ -1,3 +1,4 @@
+
 import React, { useRef } from 'react';
 import { UserSettings, Theme } from '../types';
 import { SPECIALTIES } from '../constants';
@@ -10,7 +11,6 @@ interface SettingsViewProps {
   onLogout: () => void;
 }
 
-// iOS-style List Item - Moved outside to prevent re-mounting
 const ListItem = ({ label, children, icon, last = false }: { label: string, children?: React.ReactNode, icon?: React.ReactNode, last?: boolean }) => (
   <div className={`p-4 flex items-center justify-between ${!last ? 'border-b border-slate-100 dark:border-slate-800' : ''}`}>
     <div className="flex items-center gap-3">
@@ -28,7 +28,10 @@ const SettingsView = ({
   onLogout
 }: SettingsViewProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const currentUser = auth.currentUser;
+  
+  // This helps you track updates after deployment
+  const APP_VERSION = "1.1.2";
+  const BUILD_DATE = new Date().toLocaleDateString();
 
   return (
     <div className="space-y-6 pb-32 animate-in fade-in duration-300">
@@ -45,7 +48,12 @@ const SettingsView = ({
             <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={onLogoUpload} />
         </div>
         <h2 className="mt-4 text-xl font-bold text-slate-900 dark:text-white">{settings.name || 'Set Name'}</h2>
-        <p className="text-blue-600 dark:text-blue-400 text-sm font-semibold">{settings.specialty}</p>
+        <div className="flex items-center gap-2 mt-1">
+          <p className="text-blue-600 dark:text-blue-400 text-sm font-bold uppercase tracking-wide">{settings.specialty}</p>
+          {settings.isPro && (
+            <span className="bg-yellow-400 text-black text-[9px] font-black px-2 py-0.5 rounded-full shadow-sm">PRO</span>
+          )}
+        </div>
       </div>
 
       {/* 2. Personal Information */}
@@ -104,7 +112,7 @@ const SettingsView = ({
             >
               <label className="relative inline-flex items-center cursor-pointer">
                 <input type="checkbox" checked={settings.hapticsEnabled} onChange={e => onUpdateSettings({...settings, hapticsEnabled: e.target.checked})} className="sr-only peer" />
-                <div className="w-11 h-6 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+                <div className="w-11 h-6 bg-slate-200 dark:bg-slate-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
               </label>
             </ListItem>
             <ListItem 
@@ -114,7 +122,7 @@ const SettingsView = ({
             >
               <label className="relative inline-flex items-center cursor-pointer">
                 <input type="checkbox" checked={settings.soundEnabled} onChange={e => onUpdateSettings({...settings, soundEnabled: e.target.checked})} className="sr-only peer" />
-                <div className="w-11 h-6 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+                <div className="w-11 h-6 bg-slate-200 dark:bg-slate-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
               </label>
             </ListItem>
         </div>
@@ -128,8 +136,9 @@ const SettingsView = ({
         Sign Out
       </button>
 
-      <div className="text-center pt-4">
-        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Version 1.0.0</p>
+      <div className="text-center pt-4 space-y-1">
+        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Version {APP_VERSION}</p>
+        <p className="text-[8px] text-slate-300 dark:text-slate-600 font-medium uppercase tracking-widest">Built on {BUILD_DATE}</p>
       </div>
     </div>
   );
