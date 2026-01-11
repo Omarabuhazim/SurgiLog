@@ -120,25 +120,23 @@ export const suggestProcedures = async (query: string): Promise<string[]> => {
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: {
-          parts: [{ text: `User is typing a surgical procedure: "${query}".
+          parts: [{ text: `User input: "${query}"
           
-          TASK:
-          Return 5 specific autocomplete suggestions.
-          Prioritize MODALITIES (Laparoscopic, Robotic, Open, Thoracoscopic) and common clinical variants.
+          TASK: Autocomplete professional surgical procedure names.
+          
+          CRITICAL RULES:
+          1. Expand abbreviations (e.g., "Lap Chole" -> "Laparoscopic Cholecystectomy").
+          2. Prioritize MODALITIES: Laparoscopic, Robotic, Open, Thoracoscopic, Endoscopic.
+          3. Return EXACTLY 5 distinct options.
+          4. Format: Plain text, one per line. No numbering.
 
-          Example Input: "Chole"
+          Example Input: "Appen"
           Example Output:
-          Laparoscopic Cholecystectomy
-          Open Cholecystectomy
-          Robotic Cholecystectomy
-          Cholecystectomy with Cholangiogram
-          Partial Cholecystectomy
-
-          Strict Rules:
-          - Only return the procedure names.
-          - One per line.
-          - No numbers, no bullets.
-          - No introductory text.` }]
+          Laparoscopic Appendectomy
+          Open Appendectomy
+          Robotic Appendectomy
+          Appendectomy with Drainage
+          Interval Appendectomy` }]
         },
         config: {
           temperature: 0.2,

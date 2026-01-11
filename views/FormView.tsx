@@ -185,15 +185,18 @@ const FormView = ({ initialLog, logs, onSave, onDelete, onCancel, haptics, sound
             />
             
             {showSuggestions && allSuggestions.length > 0 && (
-              <div className="absolute top-full left-0 right-0 liquid-glass rounded-[24px] mt-4 z-[100] max-h-72 overflow-y-auto overscroll-contain animate-in fade-in zoom-in-95 duration-200 no-scrollbar shadow-2xl border border-white/20 dark:border-white/10">
+              <div 
+                className="absolute top-full left-0 right-0 liquid-glass rounded-[24px] mt-2 z-[100] max-h-60 overflow-y-auto touch-pan-y shadow-2xl border border-white/20 dark:border-white/10"
+                style={{ overscrollBehavior: 'contain' }}
+                onMouseDown={(e) => e.preventDefault()} // Prevents focus loss from input when clicking scrollbar or container
+              >
                 {allSuggestions.map((s, i) => (
                   <button 
                     key={`${s}-${i}`} 
-                    onMouseDown={(e) => { e.preventDefault(); handleSuggestionClick(s); }}
-                    className="w-full text-left px-5 py-3.5 hover:bg-blue-500/10 dark:hover:bg-blue-500/20 border-b last:border-0 border-slate-100/50 dark:border-white/5 transition-colors flex items-center justify-between group active:scale-[0.99]"
+                    onClick={() => handleSuggestionClick(s)}
+                    className="w-full text-left px-5 py-4 hover:bg-blue-500/10 dark:hover:bg-blue-500/20 border-b last:border-0 border-slate-100/50 dark:border-white/5 transition-colors flex items-center justify-between group active:scale-[0.99]"
                   >
                     <span className="font-bold text-slate-800 dark:text-slate-200 text-sm leading-tight">{s}</span>
-                    {/* Add visual cue for autofill */}
                     <svg className="text-slate-300 dark:text-slate-600 group-hover:text-blue-500 transition-colors opacity-0 group-hover:opacity-100" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
                   </button>
                 ))}
