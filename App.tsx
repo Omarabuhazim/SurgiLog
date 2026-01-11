@@ -253,10 +253,16 @@ const App = () => {
 
   const handleNavChange = (newView: any) => {
     if (newView === 'form') {
+      setEditingLog(null); // Clear editing state so form is empty
       if (checkEntitlement('log')) setView(newView);
     } else {
       setView(newView);
     }
+  };
+  
+  const handleBackToDashboard = () => {
+    setEditingLog(null);
+    setView('dashboard');
   };
 
   // --- Views ---
@@ -397,7 +403,7 @@ const App = () => {
     <>
       <Layout 
         title={view === 'dashboard' ? 'Logbook' : view === 'form' ? (editingLog ? 'Edit Case' : 'New Case') : view === 'settings' ? 'Settings' : 'Export'} 
-        onBack={view !== 'dashboard' ? () => setView('dashboard') : undefined} 
+        onBack={view !== 'dashboard' ? handleBackToDashboard : undefined} 
         actions={view === 'dashboard' ? DashboardHeaderAction : undefined}
       >
         {view === 'dashboard' && <DashboardView logs={logs} settings={settings} onEditLog={(log) => { setEditingLog(log); setView('form'); }} onDeleteLog={handleDeleteLog} onNavigate={setView} />}
