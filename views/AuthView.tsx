@@ -26,8 +26,35 @@ const AuthView = ({ onSuccess, onCancel, initialMode = 'signin', defaultName }: 
   const [rememberMe, setRememberMe] = useState(true);
   
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ code?: string; message: string } | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // Immediate domain detection during render
+  const currentHostname = typeof window !== 'undefined' ? window.location.hostname : '';
+
+  const getFriendlyErrorMessage = (code: string, originalMessage: string) => {
+    switch (code) {
+      case 'auth/invalid-credential':
+      case 'auth/user-not-found':
+      case 'auth/wrong-password':
+        return "Incorrect email or password. Please check your credentials.";
+      case 'auth/email-already-in-use':
+        return "This email is already in use. Please Sign In instead.";
+      case 'auth/weak-password':
+        return "Password is too weak. Please use at least 6 characters.";
+      case 'auth/invalid-email':
+        return "Please enter a valid email address.";
+      case 'auth/network-request-failed':
+        return "Network error. Please check your internet connection.";
+      case 'auth/too-many-requests':
+        return "Access temporarily blocked due to many failed attempts. Please try again later.";
+      case 'auth/popup-closed-by-user':
+        return "Sign in cancelled.";
+      default:
+        // Clean up raw Firebase error messages
+        return originalMessage.replace('Firebase: ', '').replace('Error (auth/', '').replace(').', '');
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,15 +63,12 @@ const AuthView = ({ onSuccess, onCancel, initialMode = 'signin', defaultName }: 
     setSuccessMsg(null);
 
     try {
-      // Handle Persistence
       if (mode === 'signin' || mode === 'signup') {
         await setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence);
       }
 
       if (mode === 'signup') {
-        if (!name.trim()) {
-           throw new Error("Please enter your full name.");
-        }
+        if (!name.trim()) throw new Error("Please enter your full name.");
         await CloudService.signUpWithEmail(email, password, name, specialty);
         onSuccess();
       } else if (mode === 'signin') {
@@ -56,35 +80,25 @@ const AuthView = ({ onSuccess, onCancel, initialMode = 'signin', defaultName }: 
         setLoading(false);
       }
     } catch (err: any) {
-      if (err.code === 'auth/unauthorized-domain') {
-        const domain = window.location.hostname;
-        setError(`Domain (${domain}) is not authorized. Please check Firebase Console settings.`);
-      } else if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
-        setError("Invalid email or password.");
-      } else if (err.code === 'auth/email-already-in-use') {
-        setError("Email already registered.");
-      } else if (err.code === 'auth/weak-password') {
-        setError("Password should be at least 6 characters.");
-      } else {
-        setError(err.message || 'Authentication failed');
-      }
+      console.error("Auth Error Full:", err);
+      const friendlyMsg = getFriendlyErrorMessage(err.code, err.message || 'Authentication failed');
+      setError({ code: err.code, message: friendlyMsg });
       setLoading(false);
     }
   };
 
-  const handleGoogleSignIn = async () => {
+  const handleSocialSignIn = async (provider: 'google' | 'apple') => {
     setLoading(true);
     setError(null);
     try {
       await setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence);
-      await CloudService.signInWithGoogle();
+      if (provider === 'google') await CloudService.signInWithGoogle();
+      else await CloudService.signInWithApple();
       onSuccess();
     } catch (err: any) {
-      if (err.code === 'auth/unauthorized-domain') {
-        const domain = window.location.hostname;
-        setError(`Domain (${domain}) is not authorized.`);
-      } else if (err.code !== 'auth/popup-closed-by-user') {
-        setError(err.message || 'Google authentication failed');
+      if (err.code !== 'auth/popup-closed-by-user') {
+        const friendlyMsg = getFriendlyErrorMessage(err.code, err.message || `${provider} authentication failed`);
+        setError({ code: err.code, message: friendlyMsg });
       }
     } finally {
       setLoading(false);
@@ -92,161 +106,174 @@ const AuthView = ({ onSuccess, onCancel, initialMode = 'signin', defaultName }: 
   };
 
   return (
-    <div className="fixed inset-0 z-[70] bg-white dark:bg-slate-950 flex flex-col p-6 animate-in fade-in duration-300 overflow-y-auto">
+    <div className="fixed inset-0 z-[70] bg-white/95 dark:bg-slate-950/95 backdrop-blur-xl flex flex-col p-6 animate-in fade-in duration-300 overflow-y-auto">
       <div className="max-w-md mx-auto w-full pt-8 pb-12">
-        <button onClick={onCancel} className="mb-6 p-2 -ml-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
+        <button onClick={onCancel} className="mb-6 p-3 -ml-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-all">
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="m15 18-6-6 6-6"/></svg>
         </button>
 
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-blue-600 text-white rounded-[20px] flex items-center justify-center mx-auto mb-4 shadow-xl shadow-blue-600/20">
-            {mode === 'reset' ? (
-              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/><path d="M12 15v2"/></svg>
-            ) : mode === 'signup' ? (
-               <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
-            ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z"/><path d="M12 7v5l3 3"/></svg>
-            )}
-          </div>
-          <h2 className="text-3xl font-black text-slate-900 dark:text-white">
+        <div className="text-center mb-10">
+          <h2 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight">
             {mode === 'signup' ? 'Create Account' : mode === 'reset' ? 'Reset Password' : 'Welcome Back'}
           </h2>
-          <p className="text-slate-500 dark:text-slate-400 font-medium mt-1">
-            {mode === 'reset' ? 'Enter email to receive recovery link' : mode === 'signup' ? 'Join SurgiLog to manage your cases' : 'Securely access your surgical data'}
+          <p className="text-slate-500 dark:text-slate-400 font-medium mt-2 text-lg">
+            {mode === 'reset' ? 'Enter email to receive recovery link' : mode === 'signup' ? 'Join SurgiLog today' : 'Access your logbook'}
           </p>
         </div>
 
         {error && (
-          <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-xs font-bold rounded-[18px] border border-red-100 dark:border-red-900/50 shadow-sm break-words animate-in slide-in-from-top-2">
-            {error}
+          <div className="mb-8 animate-in slide-in-from-top-2">
+            <div className="p-5 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm font-bold rounded-[24px] border border-red-100 dark:border-red-900/50 shadow-sm break-words">
+              {error.code === 'auth/unauthorized-domain' ? (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-red-600">
+                    <span className="text-2xl">🛑</span>
+                    <p className="text-sm font-black uppercase">Authentication Blocked</p>
+                  </div>
+                  
+                  <p className="font-medium opacity-90 text-xs leading-relaxed">
+                    Firebase blocked this domain. You must add it to Authorized Domains in the Firebase Console.
+                  </p>
+
+                  <div className="bg-white/80 dark:bg-black/40 p-4 rounded-2xl border border-red-200 dark:border-red-800/50">
+                    <label className="text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-2 block">
+                        Domain to Whitelist:
+                    </label>
+                    <div className="flex items-center gap-2">
+                       <input 
+                         readOnly
+                         value={currentHostname || "unknown-host"}
+                         className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-mono text-blue-600 dark:text-blue-400 font-bold select-all focus:ring-2 focus:ring-blue-500 outline-none"
+                         onClick={(e) => e.currentTarget.select()}
+                       />
+                       <button 
+                         type="button"
+                         onClick={() => {
+                           navigator.clipboard.writeText(currentHostname);
+                           alert(`Copied: ${currentHostname}\n\n1. Go to Firebase Console\n2. Authentication > Settings > Authorized Domains\n3. Paste this domain.`);
+                         }}
+                         className="bg-red-600 text-white px-4 py-2 rounded-xl hover:bg-red-700 font-bold text-xs uppercase tracking-wider shrink-0"
+                       >
+                         Copy
+                       </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <p className="leading-relaxed">{error.message}</p>
+              )}
+            </div>
           </div>
         )}
 
         {successMsg && (
-          <div className="mb-6 p-4 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 text-xs font-bold rounded-[18px] border border-green-100 dark:border-green-900/50 shadow-sm animate-in slide-in-from-top-2">
+          <div className="mb-8 p-4 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 text-sm font-bold rounded-[24px] border border-green-100 dark:border-green-900/50 shadow-sm animate-in slide-in-from-top-2">
             {successMsg}
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           
-          {/* New User Fields */}
           {mode === 'signup' && (
             <div className="animate-in fade-in slide-in-from-top-4 space-y-4">
               <div>
-                <label className="sr-only">Full Name</label>
                 <input 
                   type="text" 
                   required 
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full h-14 px-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[14px] font-bold text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all placeholder:text-slate-400"
-                  placeholder="Full Name (e.g. Dr. Smith)"
+                  className="w-full h-16 px-6 bg-slate-100 dark:bg-slate-900 border-none rounded-2xl font-bold text-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 transition-all placeholder:text-slate-400"
+                  placeholder="Full Name"
                 />
               </div>
               <div className="relative">
                  <select 
                   value={specialty}
                   onChange={e => setSpecialty(e.target.value)}
-                  className="w-full h-14 px-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[14px] font-bold text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all appearance-none"
+                  className="w-full h-16 px-6 bg-slate-100 dark:bg-slate-900 border-none rounded-2xl font-bold text-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 transition-all appearance-none"
                  >
                    {SPECIALTIES.map(s => <option key={s} value={s}>{s}</option>)}
                  </select>
-                 <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">▼</div>
+                 <div className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m6 9 6 6 6-6"/></svg>
+                 </div>
               </div>
             </div>
           )}
 
           <div>
-            <label className="sr-only">Email</label>
             <input 
               type="email" 
               required 
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full h-14 px-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[14px] font-bold text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all placeholder:text-slate-400"
+              className="w-full h-16 px-6 bg-slate-100 dark:bg-slate-900 border-none rounded-2xl font-bold text-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 transition-all placeholder:text-slate-400"
               placeholder="Email Address"
             />
           </div>
 
           {mode !== 'reset' && (
             <div className="relative">
-              <label className="sr-only">Password</label>
               <input 
                 type={showPassword ? "text" : "password"}
                 required 
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full h-14 pl-4 pr-12 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[14px] font-bold text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all placeholder:text-slate-400"
+                className="w-full h-16 pl-6 pr-20 bg-slate-100 dark:bg-slate-900 border-none rounded-2xl font-bold text-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 transition-all placeholder:text-slate-400"
                 placeholder="Password"
               />
               <button 
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-0 top-0 h-full px-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                className="absolute right-0 top-0 h-full px-6 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                aria-label={showPassword ? "Hide password" : "Show password"}
               >
                 {showPassword ? (
-                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                   <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
                 ) : (
-                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                   <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                 )}
               </button>
             </div>
           )}
 
-          {mode !== 'reset' && (
-             <div className="flex items-center justify-between">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
-                  <span className="text-xs font-bold text-slate-500 dark:text-slate-400">Remember me</span>
-                </label>
-                {mode === 'signin' && (
-                  <button type="button" onClick={() => setMode('reset')} className="text-xs font-bold text-blue-600 hover:text-blue-700 dark:text-blue-400">
-                    Forgot Password?
-                  </button>
+          <div className="pt-4">
+            <button 
+                type="submit" 
+                disabled={loading}
+                className="w-full h-16 bg-blue-600 text-white rounded-full font-black text-lg shadow-xl shadow-blue-600/30 hover:bg-blue-500 active:scale-[0.98] transition-all disabled:opacity-50 disabled:shadow-none flex items-center justify-center gap-2"
+            >
+                {loading ? (
+                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                ) : (
+                mode === 'signin' ? 'Sign In' : mode === 'signup' ? 'Create Account' : 'Send Reset Link'
                 )}
-             </div>
-          )}
-
-          <button 
-            type="submit" 
-            disabled={loading}
-            className="w-full h-14 bg-slate-900 dark:bg-blue-600 text-white rounded-[14px] font-black shadow-lg shadow-slate-900/20 active:scale-95 transition-all disabled:opacity-50 disabled:shadow-none flex items-center justify-center gap-2"
-          >
-            {loading && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
-            {mode === 'signin' ? 'SIGN IN' : mode === 'signup' ? 'COMPLETE ACCOUNT' : 'SEND RESET LINK'}
-          </button>
+            </button>
+          </div>
         </form>
 
         {mode !== 'reset' && (
           <>
-            <div className="relative my-8">
+            <div className="relative my-10">
               <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200 dark:border-slate-800"></div></div>
               <div className="relative flex justify-center"><span className="bg-white dark:bg-slate-950 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Or continue with</span></div>
             </div>
 
-            <button 
-              type="button"
-              onClick={handleGoogleSignIn}
-              disabled={loading}
-              className="w-full h-14 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-white rounded-[14px] font-bold shadow-sm hover:bg-slate-50 dark:hover:bg-slate-800 active:scale-95 transition-all flex items-center justify-center gap-3"
-            >
-              <svg className="w-5 h-5" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
-              Google
-            </button>
+            <div className="grid grid-cols-2 gap-4">
+              <button onClick={() => handleSocialSignIn('google')} className="h-16 bg-slate-50 dark:bg-slate-900 border-none text-slate-700 dark:text-white rounded-2xl font-bold shadow-sm hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 transition-all flex items-center justify-center gap-3">
+                 <span className="text-xl">G</span> Google
+              </button>
+              <button onClick={() => handleSocialSignIn('apple')} className="h-16 bg-black text-white dark:bg-white dark:text-black border-none rounded-2xl font-bold shadow-sm hover:opacity-90 active:scale-95 transition-all flex items-center justify-center gap-3">
+                 <span className="text-xl"></span> Apple
+              </button>
+            </div>
           </>
         )}
 
-        <div className="mt-8 text-center">
-          <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
-            {mode === 'signin' ? "Don't have an account? " : mode === 'signup' ? "Already have an account? " : "Remembered your password? "}
-            <button 
-              onClick={() => setMode(mode === 'signin' ? 'signup' : 'signin')}
-              className="font-bold text-blue-600 hover:text-blue-700 dark:text-blue-400"
-            >
-              {mode === 'signin' ? 'Register' : 'Sign In'}
-            </button>
-          </p>
+        <div className="mt-10 pt-8 border-t border-slate-100 dark:border-slate-800 text-center">
+           <p className="text-center text-sm font-semibold text-slate-500 hover:text-blue-600 cursor-pointer transition-colors" onClick={() => setMode(mode === 'signin' ? 'signup' : 'signin')}>
+             {mode === 'signin' ? "Don't have an account? Sign Up" : "Already have an account? Sign In"}
+           </p>
         </div>
       </div>
     </div>

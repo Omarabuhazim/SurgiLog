@@ -1,13 +1,13 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { ProcedureLog } from '../types';
-import { PATIENT_AGES, ROLES, GENDERS } from '../constants';
+import { PATIENT_AGES, ROLES, GENDERS, SURGICAL_PROCEDURES } from '../constants';
 import { suggestProcedures } from '../services/geminiService';
 import Scanner from '../components/Scanner';
 
 interface FormViewProps {
   initialLog: ProcedureLog | null;
-  logs: ProcedureLog[]; // Added to access history for frequency analysis
+  logs: ProcedureLog[];
   onSave: (logData: Omit<ProcedureLog, 'id' | 'createdAt' | 'syncStatus'>) => void;
   onDelete?: (id: string) => void;
   onCancel: () => void;
@@ -16,9 +16,9 @@ interface FormViewProps {
 }
 
 const InputGroup = ({ children, title }: { children?: React.ReactNode, title: string }) => (
-  <div className="mb-6">
-    <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide ml-4 mb-2">{title}</h3>
-    <div className="bg-white dark:bg-slate-900 rounded-[18px] overflow-hidden shadow-sm border border-slate-100 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800">
+  <div className="mb-8">
+    <h3 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest ml-5 mb-3 drop-shadow-sm">{title}</h3>
+    <div className="liquid-glass rounded-[28px] overflow-hidden divide-y divide-white/20 dark:divide-white/5">
       {children}
     </div>
   </div>
@@ -43,32 +43,52 @@ const FormView = ({ initialLog, logs, onSave, onDelete, onCancel, haptics, sound
     logs.forEach(log => {
       counts[log.procedureName] = (counts[log.procedureName] || 0) + 1;
     });
-    // Sort by frequency and take top 10
     return Object.entries(counts)
       .sort((a, b) => b[1] - a[1])
       .map(([name]) => name)
-      .slice(0, 10);
+      .slice(0, 15);
   }, [logs]);
 
-  // Filter frequent procedures based on current typing
+  // --- Instant Local Matches (Personal + Standard List) ---
   const localMatches = useMemo(() => {
-    if (!procedureQuery.trim()) return frequentProcedures.slice(0, 5);
-    return frequentProcedures.filter(p => 
-      p.toLowerCase().includes(procedureQuery.toLowerCase())
-    );
+    const query = procedureQuery.toLowerCase().trim();
+    
+    // If query is empty, just show top frequent history
+    if (!query) return frequentProcedures.slice(0, 5);
+
+    const matches = new Set<string>();
+
+    // 1. Personal History (Highest Priority)
+    frequentProcedures.forEach(p => {
+      if (p.toLowerCase().includes(query)) matches.add(p);
+    });
+
+    // 2. Standard Common Procedures (Fallback - Instant Autocomplete)
+    SURGICAL_PROCEDURES.forEach(p => {
+      if (p.toLowerCase().includes(query)) matches.add(p);
+    });
+
+    return Array.from(matches).slice(0, 8);
   }, [procedureQuery, frequentProcedures]);
 
   useEffect(() => {
+    // Only query AI if we don't have enough local matches or user paused typing
     if (procedureQuery.length < 3) {
       setAiSuggestions([]);
       return;
     }
+    
     const timer = setTimeout(async () => {
+      // Don't call AI if we already have a perfect match in local
+      if (localMatches.some(m => m.toLowerCase() === procedureQuery.toLowerCase())) {
+          return; 
+      }
+      
       const suggestions = await suggestProcedures(procedureQuery);
-      // Filter out AI suggestions that are already in local matches to avoid duplicates
       const filteredAi = suggestions.filter(s => !localMatches.includes(s));
       setAiSuggestions(filteredAi);
-    }, 600); // Faster debounce
+    }, 600);
+    
     return () => clearTimeout(timer);
   }, [procedureQuery, localMatches]);
 
@@ -76,7 +96,6 @@ const FormView = ({ initialLog, logs, onSave, onDelete, onCancel, haptics, sound
     const trimmedId = scannedId.trim();
     const trimmedProcedure = procedureQuery.trim();
     
-    // Safety check: ensure both required fields are present
     if (!trimmedId || !trimmedProcedure) return;
 
     onSave({
@@ -105,79 +124,78 @@ const FormView = ({ initialLog, logs, onSave, onDelete, onCancel, haptics, sound
     if (haptics && 'vibrate' in navigator) navigator.vibrate(10);
   };
 
-  // Form is valid only if Procedure and Patient ID are provided
   const isFormValid = procedureQuery.trim().length > 0 && scannedId.trim().length > 0;
 
   return (
-    <div className="space-y-6 pb-24 animate-in slide-in-from-bottom-4 duration-300">
+    <div className="space-y-8 pb-24 animate-in slide-in-from-bottom-6 duration-300">
       
       <InputGroup title="Patient Information">
-        <div className="p-1 relative">
+        <div className="p-2 relative">
           <input 
             type="text" 
             value={scannedId}
             onChange={e => setScannedId(e.target.value)}
-            className={`w-full h-12 pl-4 pr-24 bg-transparent outline-none font-mono font-bold text-lg text-slate-900 dark:text-white placeholder:text-slate-300 dark:placeholder:text-slate-600 transition-colors`}
-            placeholder="Patient MRN / ID (Required)"
+            className={`w-full h-14 pl-4 pr-28 bg-transparent outline-none font-mono font-bold text-xl text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-600 transition-colors rounded-2xl focus:bg-white/20 dark:focus:bg-white/5`}
+            placeholder="MRN / ID"
           />
           <button 
             onClick={() => setIsScannerOpen(true)}
-            className="absolute right-1.5 top-1.5 bottom-1.5 bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 px-3 rounded-xl font-bold text-xs flex items-center gap-1.5 active:scale-95 transition-all"
+            className="absolute right-3 top-3 bottom-3 bg-blue-500/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-300 border border-blue-500/20 px-4 rounded-xl font-black text-[10px] uppercase tracking-wider flex items-center gap-2 shadow-sm active:scale-95 transition-all hover:bg-blue-500/20"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 7h10"/><path d="M7 12h10"/><path d="M7 17h10"/></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 7h10"/><path d="M7 12h10"/><path d="M7 17h10"/></svg>
             SCAN
           </button>
         </div>
 
-        <div className="flex divide-x divide-slate-100 dark:divide-slate-800">
-          <div className="w-1/2 relative p-1">
-             <select value={selectedAge} onChange={e => setSelectedAge(e.target.value)} className="w-full h-12 pl-4 bg-transparent outline-none font-bold text-slate-900 dark:text-white appearance-none text-base">
+        <div className="flex divide-x divide-white/20 dark:divide-white/5">
+          <div className="w-1/2 relative p-2">
+             <select value={selectedAge} onChange={e => setSelectedAge(e.target.value)} className="w-full h-14 pl-4 bg-transparent outline-none font-bold text-slate-900 dark:text-white appearance-none text-lg rounded-2xl focus:bg-white/20 dark:focus:bg-white/5">
                 {PATIENT_AGES.map(a => <option key={a} value={a}>{a}</option>)}
              </select>
-             <span className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 text-xs font-bold">Age</span>
+             <span className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 text-[10px] font-black uppercase tracking-widest">Age</span>
           </div>
-          <div className="w-1/2 relative p-1">
-             <select value={selectedGender} onChange={e => setSelectedGender(e.target.value as any)} className="w-full h-12 pl-4 bg-transparent outline-none font-bold text-slate-900 dark:text-white appearance-none text-base">
+          <div className="w-1/2 relative p-2">
+             <select value={selectedGender} onChange={e => setSelectedGender(e.target.value as any)} className="w-full h-14 pl-4 bg-transparent outline-none font-bold text-slate-900 dark:text-white appearance-none text-lg rounded-2xl focus:bg-white/20 dark:focus:bg-white/5">
                 {GENDERS.map(g => <option key={g} value={g}>{g}</option>)}
              </select>
-             <span className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 text-xs font-bold">Sex</span>
+             <span className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 text-[10px] font-black uppercase tracking-widest">Sex</span>
           </div>
         </div>
       </InputGroup>
 
       <InputGroup title="Surgical Details">
-        <div className="p-1 relative z-50">
+        <div className="p-2 relative z-50">
             <input 
               type="text" 
               value={procedureQuery}
               onChange={e => { setProcedureQuery(e.target.value); setShowSuggestions(true); }}
               onFocus={() => setShowSuggestions(true)}
-              className="w-full h-12 px-4 bg-transparent outline-none font-bold text-lg text-slate-900 dark:text-white placeholder:text-slate-300 dark:placeholder:text-slate-600"
-              placeholder="Procedure Name (Required)"
+              className="w-full h-14 px-4 bg-transparent outline-none font-bold text-xl text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-600 rounded-2xl focus:bg-white/20 dark:focus:bg-white/5"
+              placeholder="Procedure Name"
               autoComplete="off"
             />
             {showSuggestions && (localMatches.length > 0 || aiSuggestions.length > 0) && (
-              <div className="absolute top-full left-0 right-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl mt-2 shadow-2xl overflow-hidden z-[100] max-h-72 overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
-                {/* Local Frequent Matches */}
+              <div className="absolute top-full left-0 right-0 liquid-glass rounded-[24px] mt-4 z-[100] max-h-72 overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
+                {/* Local Matches (History + Standard) */}
                 {localMatches.length > 0 && (
-                  <div className="bg-slate-50 dark:bg-slate-800/50 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-400 border-b border-slate-100 dark:border-slate-800">
-                    Frequent / Recent
+                  <div className="bg-white/30 dark:bg-white/5 px-5 py-3 text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 border-b border-white/10">
+                    Quick Suggestions
                   </div>
                 )}
                 {localMatches.map((s, i) => (
                   <button 
                     key={`local-${i}`} 
                     onMouseDown={(e) => { e.preventDefault(); handleSuggestionClick(s); }}
-                    className="w-full text-left px-5 py-4 hover:bg-blue-50 dark:hover:bg-blue-900/20 border-b last:border-0 border-slate-50 dark:border-slate-800 transition-colors flex items-center justify-between group"
+                    className="w-full text-left px-5 py-4 hover:bg-white/30 dark:hover:bg-white/10 border-b last:border-0 border-white/10 transition-colors flex items-center justify-between group"
                   >
                     <span className="font-bold text-slate-800 dark:text-slate-100 text-sm">{s}</span>
-                    <svg className="text-slate-300 group-hover:text-blue-500" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M12 5v14M5 12h14"/></svg>
+                    <svg className="text-slate-300 group-hover:text-blue-500 transition-colors" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M12 5v14M5 12h14"/></svg>
                   </button>
                 ))}
 
                 {/* AI Suggestions */}
                 {aiSuggestions.length > 0 && (
-                  <div className="bg-slate-50 dark:bg-slate-800/50 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-blue-500 border-y border-slate-100 dark:border-slate-800 flex items-center gap-2">
+                  <div className="bg-white/30 dark:bg-white/5 px-5 py-3 text-[10px] font-black uppercase tracking-widest text-blue-500 border-y border-white/10 flex items-center gap-2">
                     <span className="animate-pulse">✨</span> AI Suggested
                   </div>
                 )}
@@ -185,7 +203,7 @@ const FormView = ({ initialLog, logs, onSave, onDelete, onCancel, haptics, sound
                   <button 
                     key={`ai-${i}`} 
                     onMouseDown={(e) => { e.preventDefault(); handleSuggestionClick(s); }}
-                    className="w-full text-left px-5 py-4 hover:bg-blue-50 dark:hover:bg-blue-900/20 border-b last:border-0 border-slate-50 dark:border-slate-800 transition-colors"
+                    className="w-full text-left px-5 py-4 hover:bg-white/30 dark:hover:bg-white/10 border-b last:border-0 border-white/10 transition-colors"
                   >
                     <span className="font-medium text-slate-600 dark:text-slate-300 text-sm">{s}</span>
                   </button>
@@ -194,21 +212,21 @@ const FormView = ({ initialLog, logs, onSave, onDelete, onCancel, haptics, sound
             )}
         </div>
 
-        <div className="p-1 relative">
-            <select value={selectedRole} onChange={e => setSelectedRole(e.target.value as any)} className="w-full h-12 pl-4 pr-10 bg-transparent outline-none font-bold text-slate-900 dark:text-white appearance-none text-base">
+        <div className="p-2 relative">
+            <select value={selectedRole} onChange={e => setSelectedRole(e.target.value as any)} className="w-full h-14 pl-4 pr-10 bg-transparent outline-none font-bold text-slate-900 dark:text-white appearance-none text-lg rounded-2xl focus:bg-white/20 dark:focus:bg-white/5">
               {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
             </select>
             <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
-               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="m6 9 6 6 6-6"/></svg>
+               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="m6 9 6 6 6-6"/></svg>
             </div>
         </div>
 
-        <div className="p-1">
+        <div className="p-2">
              <input 
                 type="date" 
                 value={selectedDate}
                 onChange={e => setSelectedDate(e.target.value)}
-                className="w-full h-12 px-4 bg-transparent outline-none font-bold text-slate-900 dark:text-white text-base"
+                className="w-full h-14 px-4 bg-transparent outline-none font-bold text-slate-900 dark:text-white text-lg rounded-2xl focus:bg-white/20 dark:focus:bg-white/5"
               />
         </div>
       </InputGroup>
@@ -217,21 +235,21 @@ const FormView = ({ initialLog, logs, onSave, onDelete, onCancel, haptics, sound
         <button 
           onClick={handleSubmit}
           disabled={!isFormValid}
-          className="w-full h-14 bg-blue-600 text-white rounded-[18px] font-bold text-lg shadow-lg shadow-blue-600/30 active:scale-[0.98] transition-all disabled:opacity-30 disabled:grayscale disabled:shadow-none"
+          className="w-full h-16 bg-blue-600 text-white rounded-full font-black text-lg shadow-xl shadow-blue-600/30 active:scale-[0.98] hover:bg-blue-500 transition-all disabled:opacity-30 disabled:grayscale disabled:shadow-none"
         >
-          {initialLog ? 'Update Record' : 'Save Record'}
+          {initialLog ? 'Update Case' : 'Log Case'}
         </button>
         
         {initialLog && onDelete && (
           <button 
             onClick={handleDelete}
-            className={`w-full h-14 rounded-[18px] font-bold text-sm transition-all duration-300 ${confirmDelete ? 'bg-red-600 text-white animate-pulse' : 'bg-transparent text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20'}`}
+            className={`w-full h-16 rounded-full font-bold text-sm transition-all duration-300 ${confirmDelete ? 'bg-red-600 text-white animate-pulse shadow-lg shadow-red-500/30' : 'bg-transparent text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20'}`}
           >
-            {confirmDelete ? 'Tap again to confirm' : 'Delete Record'}
+            {confirmDelete ? 'Tap again to confirm' : 'Delete Case'}
           </button>
         )}
         
-        <button onClick={onCancel} className="w-full py-3 text-slate-400 font-semibold hover:text-slate-600 dark:hover:text-slate-200">
+        <button onClick={onCancel} className="w-full py-4 text-slate-400 font-bold hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
           Cancel
         </button>
       </div>

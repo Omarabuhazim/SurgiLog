@@ -3,13 +3,16 @@ import { GoogleGenAI } from "@google/genai";
 
 // Global cooldown state to prevent hammering the API after a 429
 let cooldownUntil = 0;
+let isApiAvailable = true; // Track if API is permanently disabled due to 403/Missing Key
 
 export const getCooldownRemaining = (): number => {
+  if (!isApiAvailable) return 999999; // API disabled
   const now = Date.now();
   return Math.max(0, Math.ceil((cooldownUntil - now) / 1000));
 };
 
 async function checkCooldown() {
+  if (!isApiAvailable) throw new Error("API_DISABLED");
   const remaining = getCooldownRemaining();
   if (remaining > 0) {
     throw new Error(`429: AI service is cooling down. Please wait ${remaining}s.`);
@@ -24,15 +27,30 @@ function setCooldown(seconds: number) {
 async function withRetry<T>(fn: () => Promise<T>, retries = 2, delay = 2000): Promise<T> {
   await checkCooldown();
   
+  // Early check for API Key
+  if (!process.env.API_KEY) {
+    console.warn("SurgiLog: Gemini API Key is missing. AI features disabled.");
+    isApiAvailable = false;
+    throw new Error("MISSING_KEY");
+  }
+  
   try {
     return await fn();
   } catch (error: any) {
     const errorMsg = error?.message || "";
-    const isRateLimit = errorMsg.includes('429') || error?.status === 429 || errorMsg.includes('RESOURCE_EXHAUSTED');
-    
-    if (isRateLimit) {
+    const status = error?.status;
+
+    // Handle Rate Limiting (429)
+    if (errorMsg.includes('429') || status === 429 || errorMsg.includes('RESOURCE_EXHAUSTED')) {
       setCooldown(45);
       throw new Error("429: API Quota exhausted. Switching to manual mode.");
+    }
+
+    // Handle Permission Issues (403, 400 with invalid key)
+    if (errorMsg.includes('403') || status === 403 || errorMsg.includes('PermissionDenied') || errorMsg.includes('API key not valid')) {
+      console.warn("SurgiLog: Gemini API Permission Denied. Disabling AI features. Please check your API key and enable the Generative Language API.");
+      isApiAvailable = false;
+      throw new Error("PERMISSION_DENIED");
     }
 
     if (retries > 0) {
@@ -44,6 +62,8 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 2, delay = 2000): Pr
 }
 
 export const scanPatientId = async (base64Image: string): Promise<string | null> => {
+  if (!isApiAvailable) return null;
+  
   return withRetry(async () => {
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -79,6 +99,7 @@ export const scanPatientId = async (base64Image: string): Promise<string | null>
       // Secondary cleaning of common AI hallucinated prefixes
       return result.split('\n')[0].replace(/^(MRN|ID|PID|PT|ID:):?\s*/i, '').trim();
     } catch (error: any) {
+      if (error.message === 'PERMISSION_DENIED' || error.message === 'MISSING_KEY') return null;
       if (error.message?.includes('429') || error.message?.includes('RESOURCE_EXHAUSTED')) {
         throw error;
       }
@@ -90,6 +111,7 @@ export const scanPatientId = async (base64Image: string): Promise<string | null>
 
 export const suggestProcedures = async (query: string): Promise<string[]> => {
   if (!query || query.length < 3) return [];
+  if (!isApiAvailable) return [];
   if (getCooldownRemaining() > 0) return [];
   
   try {
@@ -109,6 +131,7 @@ export const suggestProcedures = async (query: string): Promise<string[]> => {
       return response.text?.split('\n').filter(p => p.trim() && p.length > 3).map(p => p.replace(/^\d+\.\s*/, '').trim()) || [];
     }, 0, 0);
   } catch (error) {
+    // Silently fail for autocomplete to avoid UI disruption
     return [];
   }
 };

@@ -21,7 +21,7 @@ import PaywallView from './views/PaywallView';
 import BottomNav from './components/BottomNav';
 import { ToastContainer, ToastMessage, ToastType } from './components/ui/Toast';
 
-// Helper: Compress Image (Aggressive compression for Cloud Storage compatibility)
+// Helper: Compress Image
 const resizeImage = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -92,9 +92,7 @@ const App = () => {
         document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#ffffff');
       }
     };
-
     applyTheme();
-    
     if (settings.theme === 'system') {
       const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
       const handler = () => applyTheme();
@@ -125,26 +123,18 @@ const App = () => {
         setCurrentUser(user);
         setIsAuthModalOpen(false);
 
-        // 1. Subscribe to Settings
         unsubscribeSettings = CloudService.subscribeSettings(user.uid, (data) => {
           if (data) {
             setSettings(prev => ({ ...prev, ...data }));
             if ((view === 'onboarding' || view === 'profile_setup')) {
-               if(data.name) {
-                 setView('dashboard');
-               } else {
-                 setView('profile_setup');
-               }
+               setView(data.name ? 'dashboard' : 'profile_setup');
             }
           } else {
-            if (user.displayName) {
-              setSettings(prev => ({ ...prev, name: user.displayName! }));
-            }
+            if (user.displayName) setSettings(prev => ({ ...prev, name: user.displayName! }));
             setView('profile_setup');
           }
         });
 
-        // 2. Subscribe to Logs
         unsubscribeLogs = CloudService.subscribeLogs(user.uid, (data) => {
           setLogs(data);
         });
@@ -152,17 +142,6 @@ const App = () => {
       } else {
         setCurrentUser(null);
         setLogs([]);
-        setSettings({
-            name: '',
-            specialty: SPECIALTIES[0],
-            hapticsEnabled: true,
-            soundEnabled: true,
-            theme: 'system',
-            logoUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Surgeon',
-            cloudSyncEnabled: true,
-            isPro: false
-        });
-        
         unsubscribeLogs?.();
         unsubscribeSettings?.();
         setView('onboarding');
@@ -188,9 +167,7 @@ const App = () => {
   };
 
   const handleSaveLog = async (logData: Omit<ProcedureLog, 'id' | 'createdAt' | 'syncStatus'>) => {
-    if (!currentUser) return;
-
-    const logToSave: ProcedureLog = editingLog 
+    const newLog: ProcedureLog = editingLog 
       ? { ...editingLog, ...logData, syncStatus: 'synced' }
       : {
           ...logData,
@@ -199,8 +176,9 @@ const App = () => {
           syncStatus: 'synced'
         };
 
+    if (!currentUser) return;
     try {
-      await CloudService.saveLog(currentUser.uid, logToSave);
+      await CloudService.saveLog(currentUser.uid, newLog);
       addToast('success', editingLog ? 'Case updated' : 'Case logged');
       setEditingLog(null);
       setView('dashboard');
@@ -223,19 +201,15 @@ const App = () => {
   };
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!currentUser) return;
     const file = e.target.files?.[0];
-    if (file) {
+    if (file && currentUser) {
       try {
         addToast('info', 'Uploading image...');
         const compressedBase64 = await resizeImage(file);
-        
         const newSettings = { ...settings, logoUrl: compressedBase64 };
         await CloudService.saveSettings(currentUser.uid, newSettings);
-        
         addToast('success', 'Profile photo updated');
       } catch (err) {
-        console.error(err);
         addToast('error', 'Failed to upload image.');
       }
     }
@@ -259,19 +233,17 @@ const App = () => {
      }
   };
 
-  // --- Subsciption Handlers ---
   const handleProPurchaseSuccess = () => {
     setShowPaywall(false);
     addToast('success', 'Welcome to Pro! You now have unlimited logs.');
-    // Optimistic update
     setSettings(prev => ({ ...prev, isPro: true }));
+    if(currentUser) CloudService.saveSettings(currentUser.uid, { ...settings, isPro: true });
   };
 
   const checkEntitlement = (action: 'log' | 'export') => {
     const isPro = settings.isPro || false;
-    
     if (action === 'log') {
-       if (editingLog) return true; // Always allow edits
+       if (editingLog) return true; 
        if (SubscriptionService.canAddLog(logs.length, isPro)) return true;
        setShowPaywall(true);
        return false;
@@ -281,9 +253,7 @@ const App = () => {
 
   const handleNavChange = (newView: any) => {
     if (newView === 'form') {
-      if (checkEntitlement('log')) {
-        setView(newView);
-      }
+      if (checkEntitlement('log')) setView(newView);
     } else {
       setView(newView);
     }
@@ -300,7 +270,7 @@ const App = () => {
     );
   }
 
-  // View: Onboarding (Landing)
+  // View: Onboarding
   if (view === 'onboarding') {
     return (
       <div className="flex flex-col min-h-screen bg-white dark:bg-slate-950 items-center justify-center p-6">
@@ -326,7 +296,6 @@ const App = () => {
             >
               CREATE NEW ACCOUNT
             </button>
-            <p className="text-xs text-slate-400 font-medium pt-2">Secure Cloud Storage Enabled</p>
           </div>
         </div>
         
@@ -446,9 +415,9 @@ const App = () => {
         />
       )}
       
-      {showPaywall && currentUser && (
+      {showPaywall && (
         <PaywallView 
-          userId={currentUser.uid} 
+          userId={currentUser?.uid || 'demo'} 
           onClose={() => setShowPaywall(false)} 
           onSuccess={handleProPurchaseSuccess} 
         />

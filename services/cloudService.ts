@@ -1,3 +1,4 @@
+
 import { auth, db, googleProvider } from './firebase';
 import { 
   signInWithPopup, 
@@ -5,7 +6,8 @@ import {
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword,
   updateProfile,
-  sendPasswordResetEmail
+  sendPasswordResetEmail,
+  OAuthProvider
 } from 'firebase/auth';
 import { doc, setDoc, deleteDoc, collection, writeBatch, getDocs, getDoc, onSnapshot, query, orderBy, Unsubscribe } from 'firebase/firestore';
 import { ProcedureLog, UserSettings } from '../types';
@@ -69,6 +71,22 @@ export const CloudService = {
       return result.user;
     } catch (error) {
       console.error("Google Auth Error", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Sign in with Apple
+   */
+  signInWithApple: async () => {
+    try {
+      const appleProvider = new OAuthProvider('apple.com');
+      appleProvider.addScope('email');
+      appleProvider.addScope('name');
+      const result = await signInWithPopup(auth, appleProvider);
+      return result.user;
+    } catch (error) {
+      console.error("Apple Auth Error", error);
       throw error;
     }
   },

@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -73,15 +74,32 @@ const ExportView = ({ logs, settings }: ExportViewProps) => {
 
   return (
     <div className="space-y-6 pb-24 animate-in fade-in duration-300">
-      <div className="glass-card p-6 rounded-[2.5rem] shadow-xl space-y-6">
-        <div className="flex items-center justify-between">
-          <h3 className="text-2xl font-black text-slate-800">Export Report</h3>
-          <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      <div className="liquid-glass p-6 rounded-[2.5rem] space-y-6 relative overflow-hidden">
+        {/* Background decoration */}
+        <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none"></div>
+
+        <div className="flex items-center justify-between relative z-10">
+          <div>
+            <h3 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight drop-shadow-sm">Export Report</h3>
+            <p className="text-slate-500 dark:text-slate-400 text-sm font-medium">Generate PDF Summary</p>
           </div>
+          
+          <button 
+            onClick={generatePDF}
+            disabled={filteredLogs.length === 0}
+            className="w-12 h-12 bg-blue-100/50 dark:bg-blue-600/20 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center hover:bg-blue-200/50 dark:hover:bg-blue-600/40 active:scale-95 transition-all disabled:opacity-30 disabled:active:scale-100 border border-blue-200/50 dark:border-blue-500/20"
+            aria-label="Export PDF"
+          >
+            {/* Top Icon - Kept as Share/Export Style */}
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+              <polyline points="16 6 12 2 8 6" />
+              <line x1="12" y1="2" x2="12" y2="15" />
+            </svg>
+          </button>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-4 relative z-10">
           {/* Date Range */}
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -90,7 +108,7 @@ const ExportView = ({ logs, settings }: ExportViewProps) => {
                 type="date" 
                 value={filter.startDate}
                 onChange={e => setFilter({...filter, startDate: e.target.value})}
-                className="w-full h-12 px-4 bg-slate-50 rounded-xl border-2 border-transparent focus:border-blue-500 outline-none font-bold text-sm mt-1"
+                className="w-full h-12 px-4 bg-white/40 dark:bg-slate-800/30 dark:text-white rounded-xl border border-white/20 dark:border-white/5 focus:bg-white/60 outline-none font-bold text-sm mt-1 transition-all"
               />
             </div>
             <div>
@@ -99,7 +117,7 @@ const ExportView = ({ logs, settings }: ExportViewProps) => {
                 type="date" 
                 value={filter.endDate}
                 onChange={e => setFilter({...filter, endDate: e.target.value})}
-                className="w-full h-12 px-4 bg-slate-50 rounded-xl border-2 border-transparent focus:border-blue-500 outline-none font-bold text-sm mt-1"
+                className="w-full h-12 px-4 bg-white/40 dark:bg-slate-800/30 dark:text-white rounded-xl border border-white/20 dark:border-white/5 focus:bg-white/60 outline-none font-bold text-sm mt-1 transition-all"
               />
             </div>
           </div>
@@ -112,7 +130,7 @@ const ExportView = ({ logs, settings }: ExportViewProps) => {
               placeholder="Filter by name..."
               value={filter.procedure}
               onChange={e => setFilter({...filter, procedure: e.target.value})}
-              className="w-full h-12 px-4 bg-slate-50 rounded-xl border-2 border-transparent focus:border-blue-500 outline-none font-bold text-sm mt-1"
+              className="w-full h-12 px-4 bg-white/40 dark:bg-slate-800/30 dark:text-white rounded-xl border border-white/20 dark:border-white/5 focus:bg-white/60 outline-none font-bold text-sm mt-1 placeholder:text-slate-400/50 transition-all"
             />
           </div>
 
@@ -124,7 +142,7 @@ const ExportView = ({ logs, settings }: ExportViewProps) => {
                 <select 
                   value={filter.role}
                   onChange={e => setFilter({...filter, role: e.target.value})}
-                  className="w-full h-12 px-4 bg-slate-50 rounded-xl border-2 border-transparent focus:border-blue-500 outline-none font-bold text-sm appearance-none"
+                  className="w-full h-12 px-4 bg-white/40 dark:bg-slate-800/30 dark:text-white rounded-xl border border-white/20 dark:border-white/5 focus:bg-white/60 outline-none font-bold text-sm appearance-none transition-all"
                 >
                   <option value="All">All Roles</option>
                   {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
@@ -142,7 +160,7 @@ const ExportView = ({ logs, settings }: ExportViewProps) => {
                   <select 
                     value={filter.gender}
                     onChange={e => setFilter({...filter, gender: e.target.value})}
-                    className="w-full h-12 px-4 bg-slate-50 rounded-xl border-2 border-transparent focus:border-blue-500 outline-none font-bold text-sm appearance-none"
+                    className="w-full h-12 px-4 bg-white/40 dark:bg-slate-800/30 dark:text-white rounded-xl border border-white/20 dark:border-white/5 focus:bg-white/60 outline-none font-bold text-sm appearance-none transition-all"
                   >
                     <option value="All">All</option>
                     {GENDERS.map(g => <option key={g} value={g}>{g}</option>)}
@@ -158,7 +176,7 @@ const ExportView = ({ logs, settings }: ExportViewProps) => {
                   <select 
                     value={filter.age}
                     onChange={e => setFilter({...filter, age: e.target.value})}
-                    className="w-full h-12 px-4 bg-slate-50 rounded-xl border-2 border-transparent focus:border-blue-500 outline-none font-bold text-sm appearance-none"
+                    className="w-full h-12 px-4 bg-white/40 dark:bg-slate-800/30 dark:text-white rounded-xl border border-white/20 dark:border-white/5 focus:bg-white/60 outline-none font-bold text-sm appearance-none transition-all"
                   >
                     <option value="All">All</option>
                     {PATIENT_AGES.map(a => <option key={a} value={a}>{a}</option>)}
@@ -171,19 +189,26 @@ const ExportView = ({ logs, settings }: ExportViewProps) => {
             </div>
           </div>
           
-          <div className="pt-4 border-t border-slate-100">
+          <div className="pt-4 border-t border-white/20 dark:border-white/5">
              <div className="flex justify-between items-center mb-4">
                 <span className="text-xs font-bold text-slate-400">Records found:</span>
-                <span className="text-lg font-black text-blue-600">{filteredLogs.length}</span>
+                <span className="text-lg font-black text-blue-600 dark:text-blue-400">{filteredLogs.length}</span>
              </div>
              
+             {/* Bottom Main Action Button */}
              <button 
                onClick={generatePDF}
                disabled={filteredLogs.length === 0}
                className="w-full h-14 bg-blue-600 text-white rounded-[1.5rem] font-black text-lg shadow-xl shadow-blue-600/30 active:scale-95 transition-all disabled:opacity-50 disabled:shadow-none flex items-center justify-center gap-2"
              >
-               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-               DOWNLOAD PDF
+               {/* Updated Bottom Icon to be Arrow Up AND Down (side-by-side) */}
+               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                 <path d="M7 4v16" />
+                 <path d="m3 8 4-4 4 4" />
+                 <path d="M17 20V4" />
+                 <path d="m21 16-4 4-4-4" />
+               </svg>
+               GENERATE REPORT
              </button>
           </div>
         </div>
