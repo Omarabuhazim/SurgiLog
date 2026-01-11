@@ -120,12 +120,28 @@ export const suggestProcedures = async (query: string): Promise<string[]> => {
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: {
-          parts: [{ text: `List exactly 5 professional surgical procedures starting with or containing: "${query}". 
-          Format: "Standard medical name" (e.g., "Laparoscopic Cholecystectomy"). 
-          No numbers, no bullets, one per line.` }]
+          parts: [{ text: `User is typing a surgical procedure: "${query}".
+          
+          TASK:
+          Return 5 specific autocomplete suggestions.
+          Prioritize MODALITIES (Laparoscopic, Robotic, Open, Thoracoscopic) and common clinical variants.
+
+          Example Input: "Chole"
+          Example Output:
+          Laparoscopic Cholecystectomy
+          Open Cholecystectomy
+          Robotic Cholecystectomy
+          Cholecystectomy with Cholangiogram
+          Partial Cholecystectomy
+
+          Strict Rules:
+          - Only return the procedure names.
+          - One per line.
+          - No numbers, no bullets.
+          - No introductory text.` }]
         },
         config: {
-          temperature: 0.1,
+          temperature: 0.2,
         }
       });
       return response.text?.split('\n').filter(p => p.trim() && p.length > 3).map(p => p.replace(/^\d+\.\s*/, '').trim()) || [];
