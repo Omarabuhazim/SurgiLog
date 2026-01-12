@@ -69,10 +69,13 @@ const BottomNav = ({ currentView, onChange }: BottomNavProps) => {
               onClick={() => onChange(item.id)}
               className="relative w-14 h-14 rounded-full flex items-center justify-center cursor-pointer group focus:outline-none"
             >
-              {/* Liquid Active Background */}
+              {/* Liquid Active Background - Updated to Transparent Glass */}
               <div 
-                className={`absolute inset-0 m-auto rounded-full bg-blue-500 dark:bg-blue-600 transition-all duration-500 cubic-bezier(0.32, 0.72, 0, 1)
-                  ${isActive ? 'w-12 h-12 opacity-100 shadow-[0_4px_12px_rgba(59,130,246,0.4)]' : 'w-2 h-2 opacity-0 scale-50'}
+                className={`absolute inset-0 m-auto rounded-full transition-all duration-500 cubic-bezier(0.32, 0.72, 0, 1)
+                  ${isActive 
+                    ? 'w-12 h-12 opacity-100 bg-blue-500/15 dark:bg-blue-400/15 border border-blue-500/20 shadow-[0_0_20px_rgba(59,130,246,0.15)] backdrop-blur-sm' 
+                    : 'w-2 h-2 opacity-0 scale-50 bg-transparent'
+                  }
                 `}
               ></div>
 
@@ -80,7 +83,7 @@ const BottomNav = ({ currentView, onChange }: BottomNavProps) => {
               <div 
                 className={`relative z-10 transition-all duration-300 ease-out transform
                   ${isActive 
-                    ? 'text-white scale-110' 
+                    ? 'text-blue-600 dark:text-blue-400 scale-110' 
                     : 'text-slate-500 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white group-active:scale-90'
                   }
                 `}

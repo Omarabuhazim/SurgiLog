@@ -26,6 +26,7 @@ export interface UserSettings {
   logoUrl?: string;
   cloudSyncEnabled: boolean;
   isPro?: boolean; // New field for subscription status
+  customProcedures?: string[]; // User uploaded custom procedures list
 }
 
 export interface AuthState {

@@ -75,7 +75,8 @@ const App = () => {
     theme: 'system',
     logoUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Surgeon',
     cloudSyncEnabled: true,
-    isPro: false
+    isPro: false,
+    customProcedures: []
   });
 
   // --- Theme Logic ---
@@ -407,7 +408,7 @@ const App = () => {
         actions={view === 'dashboard' ? DashboardHeaderAction : undefined}
       >
         {view === 'dashboard' && <DashboardView logs={logs} settings={settings} onEditLog={(log) => { setEditingLog(log); setView('form'); }} onDeleteLog={handleDeleteLog} onNavigate={setView} />}
-        {view === 'form' && <FormView initialLog={editingLog} logs={logs} onSave={handleSaveLog} onDelete={editingLog ? handleDeleteLog : undefined} onCancel={() => { setEditingLog(null); setView('dashboard'); }} haptics={settings.hapticsEnabled} sound={settings.soundEnabled} />}
+        {view === 'form' && <FormView initialLog={editingLog} logs={logs} onSave={handleSaveLog} onDelete={editingLog ? handleDeleteLog : undefined} onCancel={() => { setEditingLog(null); setView('dashboard'); }} haptics={settings.hapticsEnabled} sound={settings.soundEnabled} settings={settings} />}
         {view === 'settings' && <SettingsView settings={settings} onUpdateSettings={handleUpdateSettings} onLogoUpload={handleLogoUpload} onLogout={handleLogout} />}
         {view === 'export' && <ExportView logs={logs} settings={settings} />}
       </Layout>

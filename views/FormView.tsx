@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { ProcedureLog } from '../types';
+import { ProcedureLog, UserSettings } from '../types';
 import { PATIENT_AGES, ROLES, GENDERS, SURGICAL_PROCEDURES } from '../constants';
 import { suggestProcedures } from '../services/geminiService';
 import Scanner from '../components/Scanner';
@@ -13,18 +13,20 @@ interface FormViewProps {
   onCancel: () => void;
   haptics: boolean;
   sound: boolean;
+  settings: UserSettings;
 }
 
 const InputGroup = ({ children, title }: { children?: React.ReactNode, title: string }) => (
   <div className="mb-8">
     <h3 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest ml-5 mb-3 drop-shadow-sm">{title}</h3>
-    <div className="liquid-glass rounded-[28px] overflow-hidden divide-y divide-white/20 dark:divide-white/5">
+    {/* Removed overflow-hidden so the autocomplete dropdown isn't clipped */}
+    <div className="liquid-glass rounded-[28px] divide-y divide-white/20 dark:divide-white/5 relative">
       {children}
     </div>
   </div>
 );
 
-const FormView = ({ initialLog, logs, onSave, onDelete, onCancel, haptics, sound }: FormViewProps) => {
+const FormView = ({ initialLog, logs, onSave, onDelete, onCancel, haptics, sound, settings }: FormViewProps) => {
   const [scannedId, setScannedId] = useState(initialLog?.patientId || '');
   const [procedureQuery, setProcedureQuery] = useState(initialLog?.procedureName || '');
   const [selectedRole, setSelectedRole] = useState(initialLog?.role || ROLES[0]);
@@ -49,7 +51,7 @@ const FormView = ({ initialLog, logs, onSave, onDelete, onCancel, haptics, sound
       .slice(0, 15);
   }, [logs]);
 
-  // --- Instant Local Matches (Personal + Standard List) ---
+  // --- Instant Local Matches (Personal + Custom + Standard List) ---
   const localMatches = useMemo(() => {
     const query = procedureQuery.toLowerCase().trim();
     
@@ -63,13 +65,20 @@ const FormView = ({ initialLog, logs, onSave, onDelete, onCancel, haptics, sound
       if (p.toLowerCase().includes(query)) matches.add(p);
     });
 
-    // 2. Standard Common Procedures (Fallback - Instant Autocomplete)
+    // 2. Custom User Procedures (From Settings)
+    if (settings.customProcedures) {
+      settings.customProcedures.forEach(p => {
+        if (p.toLowerCase().includes(query)) matches.add(p);
+      });
+    }
+
+    // 3. Standard Common Procedures (Fallback)
     SURGICAL_PROCEDURES.forEach(p => {
       if (p.toLowerCase().includes(query)) matches.add(p);
     });
 
     return Array.from(matches).slice(0, 8);
-  }, [procedureQuery, frequentProcedures]);
+  }, [procedureQuery, frequentProcedures, settings.customProcedures]);
 
   // --- AI Suggestion Fetcher ---
   useEffect(() => {
@@ -172,7 +181,7 @@ const FormView = ({ initialLog, logs, onSave, onDelete, onCancel, haptics, sound
       </InputGroup>
 
       <InputGroup title="Surgical Details">
-        <div className="p-2 relative z-50">
+        <div className="p-2 relative z-[100]">
             <input 
               type="text" 
               value={procedureQuery}
@@ -186,7 +195,7 @@ const FormView = ({ initialLog, logs, onSave, onDelete, onCancel, haptics, sound
             
             {showSuggestions && allSuggestions.length > 0 && (
               <div 
-                className="absolute top-full left-0 right-0 liquid-glass rounded-[24px] mt-2 z-[100] max-h-60 overflow-y-auto touch-pan-y shadow-2xl border border-white/20 dark:border-white/10"
+                className="absolute top-full left-0 right-0 liquid-glass rounded-[24px] mt-2 max-h-56 overflow-y-auto touch-pan-y shadow-[0_10px_40px_rgba(0,0,0,0.2)] dark:shadow-[0_10px_40px_rgba(0,0,0,0.5)] border border-white/20 dark:border-white/10"
                 style={{ overscrollBehavior: 'contain' }}
                 onMouseDown={(e) => e.preventDefault()} // Prevents focus loss from input when clicking scrollbar or container
               >
@@ -194,7 +203,7 @@ const FormView = ({ initialLog, logs, onSave, onDelete, onCancel, haptics, sound
                   <button 
                     key={`${s}-${i}`} 
                     onClick={() => handleSuggestionClick(s)}
-                    className="w-full text-left px-5 py-4 hover:bg-blue-500/10 dark:hover:bg-blue-500/20 border-b last:border-0 border-slate-100/50 dark:border-white/5 transition-colors flex items-center justify-between group active:scale-[0.99]"
+                    className="w-full text-left px-5 py-3.5 hover:bg-blue-500/10 dark:hover:bg-blue-500/20 border-b last:border-0 border-slate-100/50 dark:border-white/5 transition-colors flex items-center justify-between group active:scale-[0.99]"
                   >
                     <span className="font-bold text-slate-800 dark:text-slate-200 text-sm leading-tight">{s}</span>
                     <svg className="text-slate-300 dark:text-slate-600 group-hover:text-blue-500 transition-colors opacity-0 group-hover:opacity-100" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
@@ -204,7 +213,7 @@ const FormView = ({ initialLog, logs, onSave, onDelete, onCancel, haptics, sound
             )}
         </div>
 
-        <div className="p-2 relative">
+        <div className="p-2 relative z-10">
             <select value={selectedRole} onChange={e => setSelectedRole(e.target.value as any)} className="w-full h-14 pl-4 pr-10 bg-transparent outline-none font-bold text-slate-900 dark:text-white appearance-none text-lg rounded-2xl focus:bg-white/20 dark:focus:bg-white/5">
               {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
             </select>
@@ -213,7 +222,7 @@ const FormView = ({ initialLog, logs, onSave, onDelete, onCancel, haptics, sound
             </div>
         </div>
 
-        <div className="p-2">
+        <div className="p-2 relative z-0">
              <input 
                 type="date" 
                 value={selectedDate}

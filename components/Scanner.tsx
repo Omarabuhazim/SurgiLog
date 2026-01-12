@@ -17,12 +17,9 @@ const Scanner = ({ onScan, onClose, haptics, sound }: ScannerProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isCapturing, setIsCapturing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [statusMessage, setStatusMessage] = useState("Initializing Camera...");
+  const [statusMessage, setStatusMessage] = useState(HAS_NATIVE_SCANNER ? "Scanning for Barcodes..." : "Camera Active");
   const [hasTorch, setHasTorch] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
-  const [isAutoScanDisabled, setIsAutoScanDisabled] = useState(false);
-  // Reduced interval for non-native from 3500ms to 2500ms for better responsiveness
-  const [scanInterval, setScanInterval] = useState(HAS_NATIVE_SCANNER ? 150 : 2500); 
   const isMountedRef = useRef(true);
   const nativeDetectorRef = useRef<any>(null);
 
@@ -35,11 +32,11 @@ const Scanner = ({ onScan, onClose, haptics, sound }: ScannerProps) => {
           formats: [
             'code_128', 'code_39', 'code_93', 
             'codabar', 'ean_13', 'ean_8', 
-            'upc_a', 'upc_e', 'data_matrix', 'itf'
+            'upc_a', 'upc_e', 'data_matrix', 'itf', 'qr_code'
           ] 
         });
       } catch (e) {
-        console.warn("BarcodeDetector initialization failed, falling back to Gemini.");
+        console.warn("BarcodeDetector initialization failed.");
       }
     }
   }, []);
@@ -111,7 +108,7 @@ const Scanner = ({ onScan, onClose, haptics, sound }: ScannerProps) => {
       });
       if (videoRef.current && isMountedRef.current) {
         videoRef.current.srcObject = stream;
-        setStatusMessage(HAS_NATIVE_SCANNER ? "Align Barcode" : "Position Patient ID clearly");
+        // setStatusMessage set in initial state or updated here
         const track = stream.getVideoTracks()[0];
         const capabilities = (track.getCapabilities?.() || {}) as any;
         if (capabilities.torch) setHasTorch(true);
@@ -127,8 +124,9 @@ const Scanner = ({ onScan, onClose, haptics, sound }: ScannerProps) => {
     const video = videoRef.current;
     if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
 
-    // PATH 1: LOCAL NATIVE SCANNING (Instant)
-    if (nativeDetectorRef.current && !manual) {
+    // PATH 1: LOCAL NATIVE SCANNING (Automatic & Manual)
+    // Runs constantly in background if supported, or once if manual click
+    if (nativeDetectorRef.current) {
       try {
         const barcodes = await nativeDetectorRef.current.detect(video);
         if (barcodes.length > 0 && isMountedRef.current) {
@@ -140,53 +138,55 @@ const Scanner = ({ onScan, onClose, haptics, sound }: ScannerProps) => {
           return;
         }
       } catch (e) {
-        console.error("Native scan error", e);
+        // Native scan failed, continue to AI if manual
       }
     }
 
-    // PATH 2: GEMINI AI FALLBACK (Slower)
-    if (manual || (!nativeDetectorRef.current && !isCapturing && !isAutoScanDisabled)) {
-      setIsCapturing(true);
-      setStatusMessage("AI Analyzing...");
+    // Stop here if it's an automatic loop tick. 
+    // We DO NOT use AI for automatic scanning to save cost/performance.
+    if (!manual) return;
+
+    // PATH 2: GEMINI AI FALLBACK (Manual Trigger Only)
+    // Used for OCR (Text) or if native barcode detector fails/missing
+    setIsCapturing(true);
+    setStatusMessage("AI Analyzing...");
+    
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const context = canvas.getContext('2d', { alpha: false });
+    if (context) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
       
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const context = canvas.getContext('2d', { alpha: false });
-      if (context) {
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
-        
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.85); // High quality for thin barcodes
-        const base64 = dataUrl.split(',')[1];
-        
-        try {
-          const id = await scanPatientId(base64);
-          if (id && isMountedRef.current) {
-            triggerFeedback();
-            setStatusMessage("ID Verified!");
-            stopCamera();
-            setTimeout(() => onScan(id), 600);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      const base64 = dataUrl.split(',')[1];
+      
+      try {
+        const id = await scanPatientId(base64);
+        if (id && isMountedRef.current) {
+          triggerFeedback();
+          setStatusMessage("ID Verified!");
+          stopCamera();
+          setTimeout(() => onScan(id), 600);
+        } else {
+          setStatusMessage("No ID found. Try closer.");
+          setIsCapturing(false);
+        }
+      } catch (err: any) {
+        if (isMountedRef.current) {
+          setIsCapturing(false);
+          if (err?.message?.includes('429')) {
+             setStatusMessage("Quota Limit. Try again later.");
           } else {
-            setStatusMessage("No ID found. Try closer.");
-            setIsCapturing(false);
-          }
-        } catch (err: any) {
-          if (isMountedRef.current) {
-            setIsCapturing(false);
-            if (err?.message?.includes('429')) {
-              setStatusMessage("Quota Reached. Auto-scan disabled.");
-              setIsAutoScanDisabled(true);
-            } else {
-              setStatusMessage("Scan failed. Tap button manually.");
-            }
+             setStatusMessage("Scan failed. Try again.");
           }
         }
-      } else {
-        setIsCapturing(false);
       }
+    } else {
+      setIsCapturing(false);
     }
-  }, [isCapturing, onScan, stopCamera, triggerFeedback, isAutoScanDisabled]);
+  }, [isCapturing, onScan, stopCamera, triggerFeedback]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -198,10 +198,13 @@ const Scanner = ({ onScan, onClose, haptics, sound }: ScannerProps) => {
   }, [stopCamera]);
 
   useEffect(() => {
-    if (isCapturing || !isMountedRef.current || isAutoScanDisabled) return;
-    const timer = setTimeout(() => captureAndScan(false), scanInterval);
-    return () => clearTimeout(timer);
-  }, [isCapturing, captureAndScan, scanInterval, isAutoScanDisabled]);
+    // Only run the automatic loop if we have a native detector.
+    // If we don't have native support, we wait for user to click "Capture".
+    if (!nativeDetectorRef.current || isCapturing || !isMountedRef.current) return;
+    
+    const timer = setInterval(() => captureAndScan(false), 200);
+    return () => clearInterval(timer);
+  }, [isCapturing, captureAndScan]);
 
   return (
     <div className="fixed inset-0 z-[60] bg-black flex flex-col">
@@ -238,8 +241,8 @@ const Scanner = ({ onScan, onClose, haptics, sound }: ScannerProps) => {
           <div className="mb-8">
             <p className="text-white font-black text-xl drop-shadow-[0_2px_4px_rgba(0,0,0,1)] uppercase tracking-tight">{error || statusMessage}</p>
             {!HAS_NATIVE_SCANNER && !isCapturing && !error && (
-               <p className="text-blue-300 text-[10px] font-bold uppercase tracking-[0.2em] mt-2 bg-blue-900/40 py-1.5 px-4 rounded-full inline-block backdrop-blur-sm">
-                 AI Enhanced Scanning Active
+               <p className="text-slate-300 text-xs font-medium mt-2">
+                 Automatic scanning unavailable on this device.<br/>Tap button to scan.
                </p>
             )}
           </div>
@@ -255,7 +258,7 @@ const Scanner = ({ onScan, onClose, haptics, sound }: ScannerProps) => {
                 ANALYZING...
               </>
             ) : (
-              'CAPTURE PATIENT ID'
+              'CAPTURE TEXT / FALLBACK'
             )}
           </button>
         </div>
