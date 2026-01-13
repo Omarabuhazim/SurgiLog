@@ -72,17 +72,20 @@ export const scanPatientId = async (base64Image: string): Promise<string | null>
         contents: {
           parts: [
             { 
-              text: `Act as a precision medical scanner. Your primary goal is to extract a Patient MRN or decode a Linear Barcode from a hospital wristband.
+              text: `You are a medical scanner assistant.
               
-              INSTRUCTIONS:
-              1. LINEAR BARCODES: Carefully look for thin vertical black lines. Decode the alphanumeric value they represent (Code 128/39).
-              2. TEXT OCR: Look for labels like "MRN", "ID", "Patient ID", or "URN". 
-              3. FORMAT: IDs are typically 6-12 digits or alphanumeric (e.g., 1234567, ABC123456).
+              Task: Extract the Patient ID / MRN from the image.
               
-              STRICT OUTPUT:
-              - Return ONLY the raw alphanumeric ID.
-              - No prefix, no labels, no punctuation.
-              - If not absolutely certain, return 'null'.` 
+              Priorities:
+              1. BARCODE: If you see a barcode (linear or 2D) that represents a number/ID, decipher it if possible.
+              2. TEXT: If no barcode is readable, look for text labels: "MRN", "Unit No", "ID", "URN", "Patient ID".
+              
+              Output Rules:
+              - Return ONLY the alphanumeric code.
+              - Remove labels like "MRN:", "ID:", "Barcode:".
+              - Remove spaces/dashes unless part of the ID format.
+              - If multiple numbers exist, prefer the one near a barcode or labeled MRN.
+              - If uncertain, return 'null'.` 
             },
             { inlineData: { mimeType: 'image/jpeg', data: base64Image } }
           ]
@@ -96,7 +99,7 @@ export const scanPatientId = async (base64Image: string): Promise<string | null>
       const result = response.text?.trim() || 'null';
       if (result.toLowerCase() === 'null' || result.length < 2) return null;
       
-      // Secondary cleaning of common AI hallucinated prefixes
+      // Secondary cleaning
       return result.split('\n')[0].replace(/^(MRN|ID|PID|PT|ID:):?\s*/i, '').trim();
     } catch (error: any) {
       if (error.message === 'PERMISSION_DENIED' || error.message === 'MISSING_KEY') return null;

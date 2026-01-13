@@ -12,6 +12,7 @@ interface ScannerProps {
 const Scanner = ({ onScan, onClose, haptics, sound }: ScannerProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const codeReaderRef = useRef<any>(null);
   
   // UI State
   const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
@@ -19,280 +20,256 @@ const Scanner = ({ onScan, onClose, haptics, sound }: ScannerProps) => {
   const [statusMessage, setStatusMessage] = useState("Initializing Camera...");
   const [hasTorch, setHasTorch] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
+  const [isCameraReady, setIsCameraReady] = useState(false);
   
-  // Logic Refs
-  const streamRef = useRef<MediaStream | null>(null);
-  const zxingReaderRef = useRef<any>(null);
-  const scanIntervalRef = useRef<any>(null);
   const isMountedRef = useRef(true);
   const hasScannedRef = useRef(false);
   const onScanRef = useRef(onScan);
 
-  // Keep onScanRef up to date
   useEffect(() => { onScanRef.current = onScan; }, [onScan]);
 
-  const stopScanner = useCallback(() => {
-    // 1. Clear Native Interval
-    if (scanIntervalRef.current) {
-      clearInterval(scanIntervalRef.current);
-      scanIntervalRef.current = null;
-    }
-    
-    // 2. Reset ZXing
-    if (zxingReaderRef.current) {
-        try { zxingReaderRef.current.reset(); } catch(e) { console.warn(e); }
-        zxingReaderRef.current = null;
-    }
-
-    // 3. Stop Video Stream
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => {
-        track.stop();
-        track.enabled = false;
-      });
-      streamRef.current = null;
-    }
-    if (videoRef.current) {
-        videoRef.current.srcObject = null;
-    }
-  }, []);
-
   const triggerFeedback = useCallback(() => {
-    if (haptics && 'vibrate' in navigator) {
-      navigator.vibrate([70, 40, 70]);
-    }
+    if (haptics && 'vibrate' in navigator) navigator.vibrate(60);
     if (sound) {
       try {
         const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
         if (AudioContextClass) {
           const audioCtx = new AudioContextClass();
-          if (audioCtx.state === 'suspended') audioCtx.resume();
-          const oscillator = audioCtx.createOscillator();
-          const gainNode = audioCtx.createGain();
-          oscillator.type = 'sine';
-          oscillator.frequency.setValueAtTime(1450, audioCtx.currentTime);
-          gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
-          gainNode.gain.linearRampToValueAtTime(0.3, audioCtx.currentTime + 0.01);
-          gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.12);
-          oscillator.connect(gainNode);
-          gainNode.connect(audioCtx.destination);
-          oscillator.start();
-          oscillator.stop(audioCtx.currentTime + 0.15);
-          setTimeout(() => audioCtx.close(), 300);
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(1200, audioCtx.currentTime);
+          gain.gain.setValueAtTime(0, audioCtx.currentTime);
+          gain.gain.linearRampToValueAtTime(0.1, audioCtx.currentTime + 0.01);
+          gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start();
+          osc.stop(audioCtx.currentTime + 0.1);
+          setTimeout(() => audioCtx.close(), 200);
         }
       } catch (e) {}
     }
   }, [haptics, sound]);
 
   const handleBarcodeFound = useCallback((rawValue: string) => {
-    if (hasScannedRef.current) return;
+    if (hasScannedRef.current || !isMountedRef.current) return;
+    const cleanValue = rawValue.trim();
+    if (cleanValue.length < 2) return;
+
     hasScannedRef.current = true;
-    
     triggerFeedback();
-    setStatusMessage("Code Detected!");
-    stopScanner();
-    onScanRef.current(rawValue);
-  }, [stopScanner, triggerFeedback]);
+    setStatusMessage("Code Captured!");
+    
+    // Cleanup and exit
+    if (codeReaderRef.current) {
+      codeReaderRef.current.reset();
+    }
+    
+    // Brief delay to show success state
+    setTimeout(() => {
+      onScanRef.current(cleanValue);
+    }, 400);
+  }, [triggerFeedback]);
 
   const toggleTorch = async () => {
-    if (!streamRef.current) return;
-    const track = streamRef.current.getVideoTracks()[0];
+    if (!codeReaderRef.current) return;
     try {
+      const stream = (videoRef.current?.srcObject as MediaStream);
+      if (!stream) return;
+      const track = stream.getVideoTracks()[0];
       const capabilities = (track.getCapabilities?.() || {}) as any;
       if (capabilities.torch) {
-        await track.applyConstraints({
-          advanced: [{ torch: !torchOn } as any]
-        });
+        await track.applyConstraints({ advanced: [{ torch: !torchOn } as any] });
         setTorchOn(!torchOn);
       }
-    } catch (err) {}
+    } catch (err) {
+      console.warn("Torch failed", err);
+    }
   };
 
-  // --- MANUAL AI FALLBACK ---
   const handleManualCapture = async () => {
     if (isAiAnalyzing || !videoRef.current || !canvasRef.current) return;
     
     setIsAiAnalyzing(true);
-    setStatusMessage("AI Analyzing...");
+    setStatusMessage("AI Reading Label...");
     
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    const context = canvas.getContext('2d', { alpha: false });
+    const ctx = canvas.getContext('2d', { alpha: false });
     
-    if (context) {
+    if (ctx) {
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
-      context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
+      ctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
       
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-      const base64 = dataUrl.split(',')[1];
+      const base64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
       
       try {
         const id = await scanPatientId(base64);
         if (id && isMountedRef.current) {
            handleBarcodeFound(id);
         } else {
-           setStatusMessage("No ID text found.");
+           setStatusMessage("No ID found. Try again.");
            setIsAiAnalyzing(false);
         }
       } catch (err: any) {
-        if (isMountedRef.current) {
-          setIsAiAnalyzing(false);
-          setStatusMessage("AI Scan Failed.");
-        }
-      }
-    } else {
         setIsAiAnalyzing(false);
+        setStatusMessage("Cloud Scan Failed.");
+      }
     }
   };
 
-  // --- INITIALIZATION ---
   useEffect(() => {
     isMountedRef.current = true;
     hasScannedRef.current = false;
 
-    const startCamera = async () => {
+    const startScanning = async () => {
+      if (!(window as any).ZXing) {
+        setError("Scanner engine not found.");
+        return;
+      }
+
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          video: { 
+        const reader = new (window as any).ZXing.BrowserMultiFormatReader();
+        codeReaderRef.current = reader;
+
+        // Optimized constraints for 1D/2D barcodes on mobile
+        const constraints = {
+          video: {
             facingMode: 'environment',
-            width: { ideal: 1920 }, 
-            height: { ideal: 1080 },
-             // @ts-ignore
-            advanced: [{ focusMode: 'continuous' }, { whiteBalanceMode: 'continuous' }]
-          } 
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            frameRate: { ideal: 30 }
+          }
+        };
+
+        // decodeFromConstraints handles stream creation, attachment, and the decode loop automatically
+        await reader.decodeFromConstraints(constraints, videoRef.current, (result: any, err: any) => {
+          if (result && !hasScannedRef.current) {
+            handleBarcodeFound(result.text);
+          }
+          if (err && !(err instanceof (window as any).ZXing.NotFoundException)) {
+            // Unexpected errors handled here if needed
+          }
         });
 
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
+        if (isMountedRef.current) {
+          setIsCameraReady(true);
+          setStatusMessage("Scanning...");
           
-          // Check Torch Support
-          const track = stream.getVideoTracks()[0];
-          const caps = (track.getCapabilities?.() || {}) as any;
-          if (caps.torch) setHasTorch(true);
+          // Check for torch after stream started
+          const stream = videoRef.current?.srcObject as MediaStream;
+          if (stream) {
+            const track = stream.getVideoTracks()[0];
+            const caps = (track.getCapabilities?.() || {}) as any;
+            if (caps.torch) setHasTorch(true);
+          }
         }
-
-        // --- HYBRID SCANNING STRATEGY ---
-        
-        // 1. Try Native BarcodeDetector (Fastest, supported on Android/Chrome)
-        if ('BarcodeDetector' in window) {
-           try {
-             // @ts-ignore
-             const formats = await window.BarcodeDetector.getSupportedFormats();
-             // @ts-ignore
-             const detector = new window.BarcodeDetector({ formats });
-             
-             setStatusMessage("Scanning...");
-             
-             scanIntervalRef.current = setInterval(async () => {
-               if (!videoRef.current || hasScannedRef.current) return;
-               try {
-                 const barcodes = await detector.detect(videoRef.current);
-                 if (barcodes.length > 0) {
-                   handleBarcodeFound(barcodes[0].rawValue);
-                 }
-               } catch (e) { }
-             }, 200);
-             
-             // If we successfully set up native, we don't need ZXing
-             return;
-           } catch (e) {
-             console.warn("Native scanner failed, trying fallback...", e);
-           }
+      } catch (err: any) {
+        console.error("Scanner error:", err);
+        if (isMountedRef.current) {
+          setError(err.name === 'NotAllowedError' ? "Camera access denied." : "Could not start camera.");
         }
-
-        // 2. Fallback: ZXing (Robust, works on iOS/Safari)
-        if ((window as any).ZXing) {
-            setStatusMessage("Scanning...");
-            
-            const hints = new (window as any).ZXing.DecodeHintType();
-            const codeReader = new (window as any).ZXing.BrowserMultiFormatReader(hints);
-            zxingReaderRef.current = codeReader;
-
-            // Attach to the existing video element to scan frames
-            codeReader.decodeFromVideoElement(videoRef.current, (result: any, err: any) => {
-                if (result && !hasScannedRef.current) {
-                    handleBarcodeFound(result.text);
-                }
-            });
-        } else {
-            setStatusMessage("Manual Capture Only");
-            setError("Auto-scan unavailable.");
-        }
-
-      } catch (err) {
-        if (isMountedRef.current) setError("Camera access denied.");
       }
     };
 
-    startCamera();
+    startScanning();
 
     return () => {
       isMountedRef.current = false;
-      stopScanner();
+      if (codeReaderRef.current) {
+        codeReaderRef.current.reset();
+      }
     };
-  }, [handleBarcodeFound, stopScanner]);
+  }, [handleBarcodeFound]);
 
   return (
-    <div className="fixed inset-0 z-[60] bg-black flex flex-col">
-      <div className="relative flex-1 overflow-hidden bg-black">
-        <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover opacity-90" />
+    <div className="fixed inset-0 z-[100] bg-black flex flex-col items-stretch">
+      {/* Video Container */}
+      <div className="relative flex-1 bg-black overflow-hidden">
+        <video 
+          ref={videoRef} 
+          playsInline 
+          muted 
+          className="w-full h-full object-cover" 
+        />
         <canvas ref={canvasRef} className="hidden" />
-        
-        {/* Close Button */}
-        <div className="absolute top-6 left-6 z-10">
-          <button onClick={() => { stopScanner(); onClose(); }} className="p-3 bg-black/40 backdrop-blur-md rounded-full text-white border border-white/20 active:scale-90 transition-all">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          </button>
-        </div>
 
-        {/* Torch Button */}
-        {hasTorch && (
-          <div className="absolute top-6 right-6 z-10">
-             <button onClick={toggleTorch} className={`p-3 rounded-full backdrop-blur-md border transition-all active:scale-90 ${torchOn ? 'bg-yellow-400 border-yellow-500 text-black shadow-lg shadow-yellow-500/20' : 'bg-black/40 border-white/20 text-white'}`}>
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A5 5 0 0 0 8 8c0 1.3.5 2.6 1.5 3.5.8.8 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
-            </button>
-          </div>
-        )}
-
-        {/* Scan Reticle */}
-        <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-10">
-          <div className={`w-full max-w-sm aspect-square relative transition-all duration-500 ${isAiAnalyzing ? 'scale-90 opacity-50' : 'scale-100 opacity-100'}`}>
-            <div className="absolute -top-1 -left-1 w-12 h-12 border-t-4 border-l-4 border-blue-500 rounded-tl-2xl"></div>
-            <div className="absolute -top-1 -right-1 w-12 h-12 border-t-4 border-r-4 border-blue-500 rounded-tr-2xl"></div>
-            <div className="absolute -bottom-1 -left-1 w-12 h-12 border-b-4 border-l-4 border-blue-500 rounded-bl-2xl"></div>
-            <div className="absolute -bottom-1 -right-1 w-12 h-12 border-b-4 border-r-4 border-blue-500 rounded-br-2xl"></div>
+        {/* Framing Overlay */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center p-8 pointer-events-none">
+          <div className="w-full max-w-sm aspect-square relative transition-transform duration-700 ease-out">
+            {/* Corners */}
+            <div className="absolute top-0 left-0 w-16 h-16 border-t-[6px] border-l-[6px] border-blue-500 rounded-tl-3xl shadow-[0_0_15px_rgba(59,130,246,0.5)]"></div>
+            <div className="absolute top-0 right-0 w-16 h-16 border-t-[6px] border-r-[6px] border-blue-500 rounded-tr-3xl shadow-[0_0_15px_rgba(59,130,246,0.5)]"></div>
+            <div className="absolute bottom-0 left-0 w-16 h-16 border-b-[6px] border-l-[6px] border-blue-500 rounded-bl-3xl shadow-[0_0_15px_rgba(59,130,246,0.5)]"></div>
+            <div className="absolute bottom-0 right-0 w-16 h-16 border-b-[6px] border-r-[6px] border-blue-500 rounded-br-3xl shadow-[0_0_15px_rgba(59,130,246,0.5)]"></div>
             
-            <div className="absolute left-4 right-4 h-0.5 bg-red-500/80 top-1/2 -translate-y-1/2 shadow-[0_0_15px_rgba(239,68,68,0.8)]"></div>
-            <p className="absolute -bottom-8 left-0 right-0 text-center text-white/80 text-xs font-bold uppercase tracking-widest animate-pulse">
-               Align Code Here
+            {/* Laser Line */}
+            {isCameraReady && !isAiAnalyzing && !hasScannedRef.current && (
+              <div className="absolute left-1 right-1 h-[3px] bg-red-500/90 shadow-[0_0_15px_rgba(239,68,68,1)] animate-[scanning_2s_infinite_ease-in-out]"></div>
+            )}
+            
+            {/* Guide Text */}
+            <p className="absolute -bottom-14 left-0 right-0 text-center text-white/90 font-black text-xs uppercase tracking-[0.2em] drop-shadow-lg">
+              {isAiAnalyzing ? 'Analyzing Image...' : 'Center Code in Box'}
             </p>
           </div>
         </div>
 
-        {/* Bottom Controls */}
-        <div className="absolute bottom-12 left-0 right-0 px-10 text-center">
-          <div className="mb-8">
-            <p className="text-white font-black text-xl drop-shadow-[0_2px_4px_rgba(0,0,0,1)] uppercase tracking-tight">{error || statusMessage}</p>
+        {/* Header Buttons */}
+        <div className="absolute top-8 left-8 right-8 flex justify-between items-center pointer-events-none">
+          <button 
+            onClick={onClose} 
+            className="p-4 bg-black/40 backdrop-blur-xl rounded-full text-white border border-white/20 active:scale-90 transition-all pointer-events-auto"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+
+          {hasTorch && (
+             <button 
+                onClick={toggleTorch} 
+                className={`p-4 rounded-full backdrop-blur-xl border transition-all active:scale-90 pointer-events-auto ${torchOn ? 'bg-yellow-400 border-yellow-500 text-black shadow-lg shadow-yellow-500/30' : 'bg-black/40 border-white/20 text-white'}`}
+             >
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m9 2 5 7H9l5 7"/></svg>
+             </button>
+          )}
+        </div>
+
+        {/* Bottom Status & Manual Trigger */}
+        <div className="absolute bottom-12 left-8 right-8 flex flex-col gap-6">
+          <div className="text-center">
+            <span className={`px-4 py-2 rounded-full text-xs font-black uppercase tracking-widest backdrop-blur-md border ${error ? 'bg-red-500/20 border-red-500/40 text-red-200' : 'bg-white/10 border-white/20 text-white/80'}`}>
+              {error || statusMessage}
+            </span>
           </div>
-          
+
           <button 
             onClick={handleManualCapture} 
-            disabled={isAiAnalyzing} 
-            className="w-full h-16 bg-white text-black rounded-[2rem] font-black text-lg active:scale-95 transition-all shadow-2xl disabled:bg-white/40 disabled:text-black/40 flex items-center justify-center gap-3"
+            disabled={isAiAnalyzing || !isCameraReady}
+            className="h-16 bg-white text-slate-900 rounded-[2rem] font-black text-lg shadow-2xl active:scale-[0.97] transition-all disabled:opacity-40 disabled:scale-100 flex items-center justify-center gap-3"
           >
             {isAiAnalyzing ? (
-              <>
-                <div className="w-5 h-5 border-3 border-black/20 border-t-black rounded-full animate-spin"></div>
-                ANALYZING...
-              </>
+              <div className="w-6 h-6 border-4 border-slate-900/20 border-t-slate-900 rounded-full animate-spin"></div>
             ) : (
-              'MANUAL CAPTURE / OCR'
+              <>
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                AI CLOUD SCAN
+              </>
             )}
           </button>
         </div>
       </div>
+
+      <style>{`
+        @keyframes scanning {
+          0% { top: 10%; opacity: 0; }
+          15% { opacity: 1; }
+          50% { top: 90%; }
+          85% { opacity: 1; }
+          100% { top: 10%; opacity: 0; }
+        }
+      `}</style>
     </div>
   );
 };
